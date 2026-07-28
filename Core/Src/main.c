@@ -67,7 +67,7 @@ int main(void) {
          * ------------------------------------------------------------------- */
         {
             static bool dot_prev = false;
-            bool dot_on = (g_SaveDelayCounter > 0);
+            bool dot_on = (g_SaveDelayCounter == 0 && CONFIG_IsDirty());
             if (dot_on != dot_prev) {
                 DISPLAY_FillCircle(8, 8, 6, dot_on ? WHITE : BLACK);
                 dot_prev = dot_on;
