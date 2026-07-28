@@ -63,23 +63,25 @@ int main(void) {
         }
 
         /* -------------------------------------------------------------------
-         * LED: 2 Гц в норме, быстро при записи в EEPROM
+         * LED: простое мигание 2 Гц
+         * Индикатор записи EEPROM — кружок в верхнем левом углу дисплея
          * ------------------------------------------------------------------- */
         {
             static uint32_t led_tick  = 0;
             static bool     led_state = false;
+            static bool     dot_prev  = false;
             uint32_t now = HAL_GetTick();
             if (now - led_tick >= 250) {
                 led_tick  = now;
                 led_state = !led_state;
             }
-            if (g_SaveDelayCounter > 3) {
-                HAL_GPIO_WritePin(PWR_ON_GPIO_Port, PWR_ON_Pin, GPIO_PIN_SET);
-            } else if (g_SaveDelayCounter > 0) {
-                HAL_GPIO_WritePin(PWR_ON_GPIO_Port, PWR_ON_Pin, GPIO_PIN_RESET);
-            } else {
-                HAL_GPIO_WritePin(PWR_ON_GPIO_Port, PWR_ON_Pin,
-                                  led_state ? GPIO_PIN_RESET : GPIO_PIN_SET);
+            HAL_GPIO_WritePin(PWR_ON_GPIO_Port, PWR_ON_Pin,
+                              led_state ? GPIO_PIN_RESET : GPIO_PIN_SET);
+
+            bool dot_on = (g_SaveDelayCounter > 0);
+            if (dot_on != dot_prev) {
+                DISPLAY_FillCircle(8, 8, 6, dot_on ? WHITE : BLACK);
+                dot_prev = dot_on;
             }
         }
 
