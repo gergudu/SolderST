@@ -3,6 +3,7 @@
  * @brief Управление состояниями и логикой меню
  */
 
+
 #include "state.h"
 #include "config.h"
 #include "buttons.h"
