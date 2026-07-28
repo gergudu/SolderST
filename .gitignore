@@ -1,4 +1,4 @@
-# STM32CubeIDE
+﻿# STM32CubeIDE - служебные папки
 .metadata/
 Debug/
 Release/
@@ -19,8 +19,9 @@ Release/
 *.swo
 *~
 
-# Настройки пользователя (не должны отличаться у разных разработчиков)
-.cproject
-.project
-.settings/*
-.launch
+# Личные настройки IDE (не .project/.cproject!)
+.settings/
+
+# OS
+Thumbs.db
+.DS_Store
