@@ -78,45 +78,55 @@ static bool read_reg(Channel_t ch, uint8_t reg, uint8_t *value) {
 }
 
 /* --------------------------------------------------------------------------
+ * Ожидание DRDY через опрос MISO (CS деассертирован)
+ * ADS1220 держит DOUT/DRDY LOW когда данные готовы
+ * -------------------------------------------------------------------------- */
+static bool wait_drdy(Channel_t ch) {
+    uint32_t t0 = HAL_GetTick();
+    while ((HAL_GetTick() - t0) < ADS1220_DRDY_TIMEOUT_MS) {
+        uint8_t byte = 0xFF;
+        cs_low(ch);
+        HAL_SPI_Receive(&hspi2, &byte, 1, 5);
+        cs_high(ch);
+        if ((byte & 0x80) == 0) return true;
+        HAL_Delay(1);
+    }
+    return false;
+}
+
+/* --------------------------------------------------------------------------
  * Инициализация одного чипа
  * -------------------------------------------------------------------------- */
 static bool init_channel(Channel_t ch) {
     cs_high(ch);
-    HAL_Delay(1);
+    HAL_Delay(5);
 
     /* Сброс */
     cs_low(ch);
-    bool ok = spi_write_byte(ADS1220_CMD_RESET);
+    spi_write_byte(ADS1220_CMD_RESET);
     cs_high(ch);
-    if (!ok) return false;
-    HAL_Delay(1);
+    HAL_Delay(5);
 
     if (!write_reg(ch, 0, 0x68)) return false;  /* AIN0/AIN1, Gain=2 */
     if (!write_reg(ch, 1, 0x04)) return false;  /* 20 SPS, continuous */
     if (!write_reg(ch, 2, 0x55)) return false;  /* внешняя опора, IDAC=500мкА */
     if (!write_reg(ch, 3, 0x80)) return false;  /* IDAC1→AIN3/REFN1 */
 
-    /* Верификация */
-    uint8_t check = 0;
-    if (!read_reg(ch, 0, &check)) return false;
-    if (check != 0x68) return false;
-
-    HAL_Delay(1);
+    HAL_Delay(2);
 
     /* Старт непрерывных преобразований */
     cs_low(ch);
-    ok = spi_write_byte(ADS1220_CMD_START);
+    spi_write_byte(ADS1220_CMD_START);
     cs_high(ch);
 
-    return ok;
+    return true;
 }
 
 /* --------------------------------------------------------------------------
  * Чтение сырых данных одного чипа
  * -------------------------------------------------------------------------- */
 static bool read_raw(Channel_t ch, int32_t *out_raw) {
-    /* Ждём готовности данных */
-    HAL_Delay(55);   /* 1/20SPS = 50мс + запас */
+    if (!wait_drdy(ch)) return false;
 
     uint8_t buf[3] = {0};
     cs_low(ch);

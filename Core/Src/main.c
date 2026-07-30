@@ -15,6 +15,7 @@
 #include "commands.h"
 #include "ui.h"
 #include "heater.h"
+#include "ads1220.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -36,7 +37,7 @@ int main(void) {
     CONFIG_Init();
     ST7789_Init();
     DISPLAY_RegisterDriver(&st7789_interface);
-    /* ADS1220_Init(); */   /* Не запаян — пропускаем */
+    ADS1220_Init();   /* Оба канала: паяльник PB8, отсос PB9 */
     HEATER_Init();
 
     HAL_TIM_Base_Start_IT(&htim5);   /* 10 мс — кнопки */
@@ -46,6 +47,21 @@ int main(void) {
     DISPLAY_Print(10, 5, "rev 6.42", &AntiquaB_24_uni, YELLOW, BLACK);
 
     while (1) {
+
+        /* -------------------------------------------------------------------
+         * Чтение температуры (ADS1220)
+         * ------------------------------------------------------------------- */
+        {
+            float temp_c = 0.0f;
+            if (ADS1220_ReadTempSolder(&temp_c)) {
+                if (temp_c < 0.0f) temp_c = 0.0f;
+                g_tCurrentSolder = (uint16_t)(temp_c + 0.5f);
+            }
+            if (ADS1220_ReadTempDesolder(&temp_c)) {
+                if (temp_c < 0.0f) temp_c = 0.0f;
+                g_tCurrentDesolder = (uint16_t)(temp_c + 0.5f);
+            }
+        }
 
         /* -------------------------------------------------------------------
          * Насос: PB13 = кнопка PB12 (удержание = работает)
