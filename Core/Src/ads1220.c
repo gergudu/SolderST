@@ -82,16 +82,10 @@ static bool read_reg(Channel_t ch, uint8_t reg, uint8_t *value) {
  * ADS1220 держит DOUT/DRDY LOW когда данные готовы
  * -------------------------------------------------------------------------- */
 static bool wait_drdy(Channel_t ch) {
-    uint32_t t0 = HAL_GetTick();
-    while ((HAL_GetTick() - t0) < ADS1220_DRDY_TIMEOUT_MS) {
-        uint8_t byte = 0xFF;
-        cs_low(ch);
-        HAL_SPI_Receive(&hspi2, &byte, 1, 5);
-        cs_high(ch);
-        if ((byte & 0x80) == 0) return true;
-        HAL_Delay(1);
-    }
-    return false;
+    /* Простое ожидание одного периода преобразования (20 SPS = 50 мс) */
+    (void)ch;
+    HAL_Delay(60);
+    return true;
 }
 
 /* --------------------------------------------------------------------------
