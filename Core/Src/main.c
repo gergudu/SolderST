@@ -1,10 +1,20 @@
-/* main.c v6.42 — полная версия */
+/* USER CODE BEGIN Header */
+/**
+ ******************************************************************************
+ * @file           : main.c v6.42
+ * @brief          : Main program body
+ ******************************************************************************
+ */
+/* USER CODE END Header */
+
 #include "main.h"
 #include "dma.h"
 #include "i2c.h"
 #include "spi.h"
 #include "tim.h"
 #include "gpio.h"
+
+/* USER CODE BEGIN Includes */
 #include "st7789.h"
 #include "fonts.h"
 #include "display.h"
@@ -18,12 +28,21 @@
 #include "ads1220.h"
 #include <stdio.h>
 #include <string.h>
+/* USER CODE END Includes */
 
 void SystemClock_Config(void);
 
+/* USER CODE BEGIN PFP */
+/* USER CODE END PFP */
+
+/* USER CODE BEGIN 0 */
+/* USER CODE END 0 */
+
 int main(void) {
+
     HAL_Init();
     SystemClock_Config();
+
     MX_GPIO_Init();
     MX_DMA_Init();
     MX_SPI1_Init();
@@ -34,10 +53,12 @@ int main(void) {
     MX_SPI2_Init();
     MX_TIM10_Init();
 
+    /* USER CODE BEGIN 2 */
     CONFIG_Init();
     ST7789_Init();
     DISPLAY_RegisterDriver(&st7789_interface);
-    ADS1220_Init();   /* Оба канала: паяльник PB8, отсос PB9 */
+
+    bool ads_ok = ADS1220_Init();   /* Оба канала: паяльник PB8, отсос PB9 */
     HEATER_Init();
 
     HAL_TIM_Base_Start_IT(&htim5);   /* 10 мс — кнопки */
@@ -45,12 +66,14 @@ int main(void) {
 
     DISPLAY_FillScreen(BLACK);
     DISPLAY_Print(10, 5, "rev 6.42", &AntiquaB_24_uni, YELLOW, BLACK);
+    DISPLAY_Print(10, 40, ads_ok ? "ADS OK" : "ADS FAIL", &AntiquaB_24_uni, GREEN, BLACK);
+    HAL_Delay(500);
+    /* USER CODE END 2 */
 
     while (1) {
+        /* USER CODE BEGIN 3 */
 
-        /* -------------------------------------------------------------------
-         * Чтение температуры (ADS1220)
-         * ------------------------------------------------------------------- */
+        /* Чтение температуры (ADS1220) */
         {
             float temp_c = 0.0f;
             if (ADS1220_ReadTempSolder(&temp_c)) {
@@ -63,24 +86,18 @@ int main(void) {
             }
         }
 
-        /* -------------------------------------------------------------------
-         * Насос: PB13 = кнопка PB12 (удержание = работает)
-         * Передний фронт — сброс таймера сна отсоса
-         * ------------------------------------------------------------------- */
+        /* Насос: PB13 = кнопка PB12 (удержание = работает)
+         * Передний фронт — сброс таймера сна отсоса */
         {
             static bool vac_prev = false;
             bool vac = (HAL_GPIO_ReadPin(Btn_Pump_GPIO_Port, Btn_Pump_Pin) == GPIO_PIN_RESET);
-            if (vac && !vac_prev) {
-                HEATER_ResetSleepDesolder();
-            }
+            if (vac && !vac_prev) HEATER_ResetSleepDesolder();
             vac_prev = vac;
             HAL_GPIO_WritePin(Pump_On_GPIO_Port, Pump_On_Pin,
                               vac ? GPIO_PIN_SET : GPIO_PIN_RESET);
         }
 
-        /* -------------------------------------------------------------------
-         * Индикатор записи EEPROM — кружок в верхнем левом углу дисплея
-         * ------------------------------------------------------------------- */
+        /* Индикатор записи EEPROM — кружок в верхнем левом углу */
         {
             static bool dot_prev = false;
             bool dot_on = (g_SaveDelayCounter == 0 && CONFIG_IsDirty());
@@ -90,36 +107,26 @@ int main(void) {
             }
         }
 
-        /* -------------------------------------------------------------------
-         * FSM кнопок
-         * ------------------------------------------------------------------- */
+        /* FSM кнопок */
         {
             static uint16_t last_mask = 0;
             ButtonEvent_t event = BUTTONS_Process();
-
             if (event != BTN_EVENT_NONE) {
                 COMMANDS_HandleButtonEvent(event);
-                if (CONFIG_IsDirty()) {
-                    g_SaveDelayCounter = 0;
-                }
+                if (CONFIG_IsDirty()) g_SaveDelayCounter = 0;
             }
-
-            if (g_ButtonContext.stable_mask == 0 && last_mask != 0) {
-                if (CONFIG_IsDirty()) {
-                    g_SaveDelayCounter = SAVE_DELAY_TICKS;
-                }
-            }
+            if (g_ButtonContext.stable_mask == 0 && last_mask != 0)
+                if (CONFIG_IsDirty()) g_SaveDelayCounter = SAVE_DELAY_TICKS;
             last_mask = g_ButtonContext.stable_mask;
-
             if (g_SaveDelayCounter == 0 && g_ButtonContext.stable_mask == 0
-                    && CONFIG_IsDirty()) {
+                    && CONFIG_IsDirty())
                 CONFIG_SaveToEEPROM();
-            }
         }
 
         UI_UpdateLoop();
-
         HAL_Delay(5);
+
+        /* USER CODE END 3 */
     }
 }
 
@@ -135,24 +142,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     } else if (htim->Instance == TIM5) {
         static uint16_t last_gpio  = 0;
         static uint8_t  stable_cnt = 0;
-
         if (g_SaveDelayCounter) g_SaveDelayCounter--;
-
         uint16_t gpio = (~GPIOA->IDR) & BTN_ALL_PINS;
-
-        if (gpio == last_gpio) {
-            if (stable_cnt < 3) stable_cnt++;
-        } else {
-            stable_cnt = 1;
-            last_gpio  = gpio;
-        }
-
+        if (gpio == last_gpio) { if (stable_cnt < 3) stable_cnt++; }
+        else { stable_cnt = 1; last_gpio = gpio; }
         if (stable_cnt == 3) {
             if (gpio != 0 && g_ButtonContext.stable_mask == 0)
                 g_ButtonContext.chord_window = CHORD_WINDOW_TICKS;
             g_ButtonContext.stable_mask = gpio;
         }
-
         if (g_ButtonContext.stable_mask != 0) {
             g_ButtonContext.buttons_tick++;
             if (g_ButtonContext.chord_window) g_ButtonContext.chord_window--;
@@ -198,11 +196,19 @@ void SystemClock_Config(void) {
     if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK) Error_Handler();
 }
 
+/* USER CODE BEGIN 6 */
+/* USER CODE END 6 */
+
 void Error_Handler(void) {
+    /* USER CODE BEGIN Error_Handler_Debug */
     __disable_irq();
     while (1) {}
+    /* USER CODE END Error_Handler_Debug */
 }
 
 #ifdef USE_FULL_ASSERT
-void assert_failed(uint8_t *file, uint32_t line) {}
+void assert_failed(uint8_t *file, uint32_t line) {
+    /* USER CODE BEGIN 6 */
+    /* USER CODE END 6 */
+}
 #endif

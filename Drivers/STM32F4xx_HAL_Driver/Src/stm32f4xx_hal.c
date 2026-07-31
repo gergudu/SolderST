@@ -271,7 +271,6 @@ __weak HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority)
 
   /* Return function status */
   return HAL_OK;
-
 }
 
 /**

@@ -57,8 +57,10 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOA, Disp_DC_Pin|Disp_RST_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, Pump_On_Pin|BEEP_Pin|Solder_On_Pin|Desolder_On_Pin
-                          |ADS1220_Solder_CS_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, Pump_On_Pin|BEEP_Pin|Solder_On_Pin|Desolder_On_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, ADS1220_Solder_CS_Pin|ADS1220_Desolder_CS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pins : PWR_ON_Pin SPI1_CS1_Pin */
   GPIO_InitStruct.Pin = PWR_ON_Pin|SPI1_CS1_Pin;
@@ -80,16 +82,16 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(Dock_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : Desolder_Test_Pin Solder_Test_Pin Btn_Pump_Pin ADS1220_Desolder_CS_Pin */
-  GPIO_InitStruct.Pin = Desolder_Test_Pin|Solder_Test_Pin|Btn_Pump_Pin|ADS1220_Desolder_CS_Pin;
+  /*Configure GPIO pins : Desolder_Test_Pin Solder_Test_Pin Btn_Pump_Pin */
+  GPIO_InitStruct.Pin = Desolder_Test_Pin|Solder_Test_Pin|Btn_Pump_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : Pump_On_Pin BEEP_Pin Solder_On_Pin Desolder_On_Pin
-                           ADS1220_Solder_CS_Pin */
+                           ADS1220_Solder_CS_Pin ADS1220_Desolder_CS_Pin */
   GPIO_InitStruct.Pin = Pump_On_Pin|BEEP_Pin|Solder_On_Pin|Desolder_On_Pin
-                          |ADS1220_Solder_CS_Pin;
+                          |ADS1220_Solder_CS_Pin|ADS1220_Desolder_CS_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
