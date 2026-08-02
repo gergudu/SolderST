@@ -49,7 +49,8 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+static bool g_solder_ok   = false;
+static bool g_desolder_ok = false;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -103,38 +104,21 @@ int main(void)
   ST7789_Init();
   DISPLAY_RegisterDriver(&st7789_interface);
 
-  bool ads_ok = ADS1220_Init();
-  /* Принудительный сброс */
-  HAL_GPIO_WritePin(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, GPIO_PIN_RESET);
-  uint8_t rst = 0x06;  /* RESET команда */
-  HAL_SPI_Transmit(&hspi2, &rst, 1, 100);
-  HAL_GPIO_WritePin(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, GPIO_PIN_SET);
-  HAL_Delay(100);  /* ждём после сброса */
-
-  uint8_t reg0 = 0;
-  ADS1220_ReadReg(0, &reg0);
   char rbuf[32];
-  snprintf(rbuf, sizeof(rbuf), "ADS:%s R0:0x%02X", ads_ok?"OK":"FAIL", reg0);
+  uint8_t reg0 = 0;
+
+  g_solder_ok = ADS1220_InitSolder();
+  ADS1220_ReadReg(0, &reg0);
+  snprintf(rbuf, sizeof(rbuf), "S:%s R0:0x%02X", g_solder_ok?"OK":"FAIL", reg0);
   DISPLAY_Print(10, 40, rbuf, &AntiquaB_24_uni, GREEN, BLACK);
   HAL_Delay(1000);
 
-  /* Тест SPI2 напрямую */
-  HAL_GPIO_WritePin(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, GPIO_PIN_RESET);
-  uint8_t cmd[2] = {0x43, 0x68};
-  HAL_SPI_Transmit(&hspi2, cmd, 2, 100);
-  HAL_GPIO_WritePin(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, GPIO_PIN_SET);
-  HAL_Delay(1);
-  uint8_t rcmd = 0x23;
-  uint8_t rval = 0;
-  HAL_GPIO_WritePin(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, GPIO_PIN_RESET);
-  HAL_SPI_Transmit(&hspi2, &rcmd, 1, 100);
-  HAL_SPI_Receive(&hspi2, &rval, 1, 100);
-  HAL_GPIO_WritePin(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, GPIO_PIN_SET);
-  snprintf(rbuf, sizeof(rbuf), "RAW:0x%02X", rval);
-  DISPLAY_Print(10, 70, rbuf, &AntiquaB_24_uni, YELLOW, BLACK);
-  HAL_Delay(2000);
-
-  HEATER_Init();
+  g_desolder_ok = ADS1220_InitDesolder();
+  uint8_t reg0_d = 0;
+  ADS1220_ReadRegDesolder(0, &reg0_d);
+  snprintf(rbuf, sizeof(rbuf), "D:%s R0:0x%02X", g_desolder_ok?"OK":"FAIL", reg0_d);
+  DISPLAY_Print(10, 70, rbuf, &AntiquaB_24_uni, CYAN, BLACK);
+  HAL_Delay(1000);
 
   HEATER_Init();
   HAL_TIM_Base_Start_IT(&htim5);
@@ -154,11 +138,11 @@ int main(void)
     /* Чтение температуры (ADS1220) */
     {
         float temp_c = 0.0f;
-        if (ADS1220_ReadTempSolder(&temp_c)) {
+        if (g_solder_ok && ADS1220_ReadTempSolder(&temp_c)) {
             if (temp_c < 0.0f) temp_c = 0.0f;
             g_tCurrentSolder = (uint16_t)(temp_c + 0.5f);
         }
-        if (ADS1220_ReadTempDesolder(&temp_c)) {
+        if (g_desolder_ok && ADS1220_ReadTempDesolder(&temp_c)) {
             if (temp_c < 0.0f) temp_c = 0.0f;
             g_tCurrentDesolder = (uint16_t)(temp_c + 0.5f);
         }

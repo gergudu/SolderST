@@ -81,6 +81,8 @@
  * @retval false — ошибка SPI или чип не отвечает
  */
 bool ADS1220_Init(void);
+bool ADS1220_InitSolder(void);
+bool ADS1220_InitDesolder(void);
 
 /**
  * @brief  Считать сырое 24-битное значение (знаковое, дополнение до 2).
