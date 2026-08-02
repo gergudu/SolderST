@@ -183,3 +183,7 @@ bool ADS1220_IsDataReady(void) {
 bool ADS1220_ReadReg(uint8_t reg, uint8_t *value) {
     return read_reg(CH_SOLDER, reg, value);
 }
+
+bool ADS1220_ReadRegDesolder(uint8_t reg, uint8_t *value) {
+    return read_reg(CH_DESOLDER, reg, value);
+}

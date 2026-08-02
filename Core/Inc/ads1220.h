@@ -111,6 +111,7 @@ bool ADS1220_ReadTempDesolder(float *out_temp_c);
  */
 bool ADS1220_IsDataReady(void);
 bool ADS1220_ReadReg(uint8_t reg, uint8_t *value);
+bool ADS1220_ReadRegDesolder(uint8_t reg, uint8_t *value);
 
 
 #endif /* INC_ADS1220_H_ */

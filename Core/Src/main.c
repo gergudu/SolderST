@@ -104,12 +104,37 @@ int main(void)
   DISPLAY_RegisterDriver(&st7789_interface);
 
   bool ads_ok = ADS1220_Init();
+  /* Принудительный сброс */
+  HAL_GPIO_WritePin(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, GPIO_PIN_RESET);
+  uint8_t rst = 0x06;  /* RESET команда */
+  HAL_SPI_Transmit(&hspi2, &rst, 1, 100);
+  HAL_GPIO_WritePin(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, GPIO_PIN_SET);
+  HAL_Delay(100);  /* ждём после сброса */
+
   uint8_t reg0 = 0;
   ADS1220_ReadReg(0, &reg0);
   char rbuf[32];
   snprintf(rbuf, sizeof(rbuf), "ADS:%s R0:0x%02X", ads_ok?"OK":"FAIL", reg0);
   DISPLAY_Print(10, 40, rbuf, &AntiquaB_24_uni, GREEN, BLACK);
   HAL_Delay(1000);
+
+  /* Тест SPI2 напрямую */
+  HAL_GPIO_WritePin(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, GPIO_PIN_RESET);
+  uint8_t cmd[2] = {0x43, 0x68};
+  HAL_SPI_Transmit(&hspi2, cmd, 2, 100);
+  HAL_GPIO_WritePin(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, GPIO_PIN_SET);
+  HAL_Delay(1);
+  uint8_t rcmd = 0x23;
+  uint8_t rval = 0;
+  HAL_GPIO_WritePin(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, GPIO_PIN_RESET);
+  HAL_SPI_Transmit(&hspi2, &rcmd, 1, 100);
+  HAL_SPI_Receive(&hspi2, &rval, 1, 100);
+  HAL_GPIO_WritePin(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, GPIO_PIN_SET);
+  snprintf(rbuf, sizeof(rbuf), "RAW:0x%02X", rval);
+  DISPLAY_Print(10, 70, rbuf, &AntiquaB_24_uni, YELLOW, BLACK);
+  HAL_Delay(2000);
+
+  HEATER_Init();
 
   HEATER_Init();
   HAL_TIM_Base_Start_IT(&htim5);
