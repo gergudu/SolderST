@@ -7,8 +7,8 @@
  *   AIN0(+) / AIN1(-) — дифференциальное измерение напряжения на RTD
  *   IDAC1 → AIN0 — ток возбуждения 1000 мкА течёт через Rref(100 Ом) и RTD
  *   REFP0/REFN0    — внешняя опора на резисторе Rref (ratiometric)
- *   CS  → PB8 (SPI2_CS1)
- *   DRDY→ PB9 (вход, активный низкий)
+ *   CS_Solder   → PB8 (SPI2_CS1)
+ *   CS_Desolder   → PB9 (SPI2_CS1)
  *
  * RTD паяльника: R = 21.7 + T * 0.072 Ом
  * Калибровка смещения проводов (~0.25 Ом) — через biasSolder в config.

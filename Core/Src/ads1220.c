@@ -143,9 +143,17 @@ static bool read_raw(Channel_t ch, int32_t *out_raw) {
  * Публичные функции
  * -------------------------------------------------------------------------- */
 
+bool ADS1220_InitSolder(void) {
+    return init_channel(CH_SOLDER);
+}
+
+bool ADS1220_InitDesolder(void) {
+    return init_channel(CH_DESOLDER);
+}
+
 bool ADS1220_Init(void) {
-    bool ok = init_channel(CH_SOLDER);
-    ok &= init_channel(CH_DESOLDER);
+    bool ok = ADS1220_InitSolder();
+    ok &= ADS1220_InitDesolder();
     return ok;
 }
 
