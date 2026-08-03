@@ -107,6 +107,15 @@ int main(void)
   g_solder_ok   = ADS1220_InitSolder();
   g_desolder_ok = ADS1220_InitDesolder();
 
+
+  /* Диагностика */
+  char rbuf[32];
+  uint8_t reg0 = 0;
+  ADS1220_ReadReg(0, &reg0);
+  snprintf(rbuf, sizeof(rbuf), "S:%s R0:0x%02X", g_solder_ok?"OK":"FAIL", reg0);
+  DISPLAY_Print(10, 40, rbuf, &AntiquaB_24_uni, GREEN, BLACK);
+  HAL_Delay(2000);
+
   HEATER_Init();
   HAL_TIM_Base_Start_IT(&htim5);
   HAL_TIM_Base_Start_IT(&htim10);
