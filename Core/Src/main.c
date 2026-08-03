@@ -104,25 +104,13 @@ int main(void)
   ST7789_Init();
   DISPLAY_RegisterDriver(&st7789_interface);
 
-  char rbuf[32];
-  uint8_t reg0 = 0;
-
-  g_solder_ok = ADS1220_InitSolder();
-  ADS1220_ReadReg(0, &reg0);
-  snprintf(rbuf, sizeof(rbuf), "S:%s R0:0x%02X", g_solder_ok?"OK":"FAIL", reg0);
-  DISPLAY_Print(10, 40, rbuf, &AntiquaB_24_uni, GREEN, BLACK);
-  HAL_Delay(1000);
-
+  g_solder_ok   = ADS1220_InitSolder();
   g_desolder_ok = ADS1220_InitDesolder();
-  uint8_t reg0_d = 0;
-  ADS1220_ReadRegDesolder(0, &reg0_d);
-  snprintf(rbuf, sizeof(rbuf), "D:%s R0:0x%02X", g_desolder_ok?"OK":"FAIL", reg0_d);
-  DISPLAY_Print(10, 70, rbuf, &AntiquaB_24_uni, CYAN, BLACK);
-  HAL_Delay(1000);
 
   HEATER_Init();
   HAL_TIM_Base_Start_IT(&htim5);
   HAL_TIM_Base_Start_IT(&htim10);
+
   DISPLAY_FillScreen(BLACK);
   DISPLAY_Print(10, 5, "rev 6.42", &AntiquaB_24_uni, YELLOW, BLACK);
   /* USER CODE END 2 */
