@@ -395,7 +395,7 @@ static void UI_DrawSharedPresetRow(bool active_is_solder) {
         snprintf(buf, sizeof(buf), "%u", *(p + j));
         uint16_t pw = DISPLAY_GetTextWidth(buf, &AntiquaB_24_uni);
         uint16_t px = j * colW + (colW > pw ? (colW - pw) / 2 : 0);
-        DISPLAY_SmartPrint(70 + j, px, py, buf, WHITE, BLACK, &AntiquaB_24_uni);
+        DISPLAY_SmartPrint(16 + j, px, py, buf, WHITE, BLACK, &AntiquaB_24_uni);
     }
 }
 
@@ -428,7 +428,7 @@ void UI_DrawMainScreen(void) {
     if (tool_now != tool_prev || g_forceFullRedraw) {
         for (uint8_t s = 10; s <= 15; s++) DISPLAY_ClearSlot(s);
         for (uint8_t s = 60; s <= 65; s++) DISPLAY_ClearSlot(s);
-        for (uint8_t s = 70; s <= 72; s++) DISPLAY_ClearSlot(s);
+        for (uint8_t s = 16; s <= 18; s++) DISPLAY_ClearSlot(s);
     }
 
     UI_DrawToolColumn(0,    half,      true,  tool_now);
