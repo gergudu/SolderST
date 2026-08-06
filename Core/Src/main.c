@@ -107,7 +107,6 @@ int main(void)
   g_solder_ok   = ADS1220_InitSolder();
   g_desolder_ok = ADS1220_InitDesolder();
 
-
   /* Диагностика */
   char rbuf[32];
   uint8_t reg0 = 0;
