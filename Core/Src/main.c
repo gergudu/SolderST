@@ -163,7 +163,14 @@ int main(void)
         last_mask = g_ButtonContext.stable_mask;
         if (g_SaveDelayCounter == 0 && g_ButtonContext.stable_mask == 0
                 && CONFIG_IsDirty()) {
-            if (CONFIG_SaveToEEPROM()) g_EepromFlashTicks = EEPROM_FLASH_TICKS;
+            /* CONFIG_SaveToEEPROM() пишет по одному dirty-полю за вызов.
+               Если полей несколько, будет несколько успешных вызовов
+               подряд (по одному на проходку цикла) — не продлеваем
+               вспышку на каждое из них, иначе индикатор "горит",
+               пока не смоются все поля, вместо короткого моргания. */
+            if (CONFIG_SaveToEEPROM() && g_EepromFlashTicks == 0) {
+                g_EepromFlashTicks = EEPROM_FLASH_TICKS;
+            }
         }
     }
 
