@@ -30,7 +30,6 @@ extern SPI_HandleTypeDef hspi2;
 #define CMD_RESET   0x06
 #define CMD_START   0x08
 #define CMD_RDATA   0x10
-#define CMD_RREG(r) (0x20 | ((r) << 2))
 #define CMD_WREG(r) (0x40 | ((r) << 2))
 
 /* =========================================================================
@@ -66,15 +65,6 @@ static bool write_reg(GPIO_TypeDef *port, uint16_t pin, uint8_t reg, uint8_t val
     uint8_t buf[2] = {CMD_WREG(reg), val};
     CS_LOW(port, pin);
     bool ok = spi_tx(buf, 2);
-    CS_HIGH(port, pin);
-    return ok;
-}
-
-static bool read_reg(GPIO_TypeDef *port, uint16_t pin, uint8_t reg, uint8_t *val) {
-    uint8_t cmd = CMD_RREG(reg);
-    CS_LOW(port, pin);
-    bool ok = spi_tx(&cmd, 1);
-    if (ok) ok = spi_rx(val, 1);
     CS_HIGH(port, pin);
     return ok;
 }
@@ -176,21 +166,5 @@ bool ADS1220_ReadTempDesolder(float *out_temp_c) {
                 * (ADS1220_RREF_OHM / ADS1220_PGA_GAIN);
     *out_temp_c = (r_rtd - (float)g_ServiceSettings.biasDesolder / 10.0f)
                 * 1000.0f / (float)g_ServiceSettings.slopeDesolder;
-    return true;
-}
-
-bool ADS1220_ReadRaw(int32_t *out_raw) {
-    return read_raw(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, out_raw);
-}
-
-bool ADS1220_ReadReg(uint8_t reg, uint8_t *value) {
-    return read_reg(ADS1220_Solder_CS_GPIO_Port, ADS1220_Solder_CS_Pin, reg, value);
-}
-
-bool ADS1220_ReadRegDesolder(uint8_t reg, uint8_t *value) {
-    return read_reg(ADS1220_Desolder_CS_GPIO_Port, ADS1220_Desolder_CS_Pin, reg, value);
-}
-
-bool ADS1220_IsDataReady(void) {
     return true;
 }

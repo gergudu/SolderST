@@ -85,14 +85,6 @@ bool ADS1220_InitSolder(void);
 bool ADS1220_InitDesolder(void);
 
 /**
- * @brief  Считать сырое 24-битное значение (знаковое, дополнение до 2).
- * @param  out_raw — указатель для результата
- * @retval true  — данные готовы и прочитаны
- * @retval false — таймаут DRDY или ошибка SPI
- */
-bool ADS1220_ReadRaw(int32_t *out_raw);
-
-/**
  * @brief  Получить температуру паяльника в °C.
  *         Вычисление: R_rtd = raw/FS * Rref  →  T = (R_rtd - R0) / coeff
  * @param  out_temp_c — указатель для результата
@@ -106,14 +98,6 @@ bool ADS1220_ReadTempSolder(float *out_temp_c);
  *        Переключает MUX и ждёт одно преобразование (55 мс).
  */
 bool ADS1220_ReadTempDesolder(float *out_temp_c);
-
-/**
- * @brief  Проверить флаг DRDY без блокировки.
- * @retval true — данные готовы (DRDY = LOW)
- */
-bool ADS1220_IsDataReady(void);
-bool ADS1220_ReadReg(uint8_t reg, uint8_t *value);
-bool ADS1220_ReadRegDesolder(uint8_t reg, uint8_t *value);
 
 
 #endif /* INC_ADS1220_H_ */

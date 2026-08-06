@@ -305,7 +305,7 @@ void HEATER_Init(void) {
         g_ServiceSettings.KiSolder / 100.0f,
         g_ServiceSettings.KdSolder / 100.0f);
 
-    /* Инициализация ПИД отсоса (заглушка) */
+    /* Инициализация ПИД отсоса */
     PID_Init(&s_desolder.pid,
         g_ServiceSettings.KpDesolder / 100.0f,
         g_ServiceSettings.KiDesolder / 100.0f,

@@ -277,26 +277,100 @@ void UI_DrawServiceMenu(void) {
 }
 
 
-void UI_DrawMainScreen(bool is_solder) {
-    // Текущая температура (Слот 11)
-   /*выводв в целых*/
-	int16_t cur = is_solder ? g_tCurrentSolder : g_tCurrentDesolder;
-    snprintf(buf, sizeof(buf), "%3u", cur);
-    DISPLAY_SmartPrint(11, 45, 75, buf, WHITE, BLACK, &Comic_40_dig);
+/**
+ * @brief Отрисовка одной колонки главного экрана (паяльник или отсос).
+ * @param x0                Левая граница колонки в пикселях
+ * @param w                 Ширина колонки в пикселях
+ * @param is_solder         true — это колонка паяльника, false — отсоса
+ * @param active_tool_is_solder  true, если сейчас выбран (активен) паяльник
+ */
+static void UI_DrawToolColumn(uint16_t x0, uint16_t w, bool is_solder, bool active_tool_is_solder) {
+    uint16_t sh = DISPLAY_GetHeight();
+    bool active = (is_solder == active_tool_is_solder);
 
+    /* Неактивный инструмент — целиком серый (подпись и температура,
+       остальное для единообразия туда же) */
+    uint16_t labelColor   = active ? CYAN  : GRAY;
+    uint16_t tempColor    = active ? WHITE : GRAY;
+    uint16_t setColor     = active ? GREEN : GRAY;
+    uint16_t presetColor  = active ? WHITE : GRAY;
 
-    // Уставка (Слот 12)
+    uint8_t slotLabel   = is_solder ? 10 : 60;
+    uint8_t slotTemp    = is_solder ? 11 : 61;
+    uint8_t slotSet     = is_solder ? 12 : 62;
+    uint8_t slotPreset0 = is_solder ? 13 : 63;
+
+    /* Подпись окна, шрифт 24px */
+    const char *label = is_solder ? "ПАЯЛЬНИК" : "ОТСОС";
+    uint16_t lw = DISPLAY_GetTextWidth(label, &AntiquaB_24_uni);
+    uint16_t lx = x0 + (w > lw ? (w - lw) / 2 : 0);
+    DISPLAY_SmartPrint(slotLabel, lx, 4, label, labelColor, BLACK, &AntiquaB_24_uni);
+
+    /* Текущая температура — по вертикали центрируется в зоне между
+       разделительной линией (y=32) и блоком уставки/пресетов внизу */
+    int16_t cur = is_solder ? g_tCurrentSolder : g_tCurrentDesolder;
+    snprintf(buf, sizeof(buf), "%3u", (uint16_t)cur);
+    uint16_t tw = DISPLAY_GetTextWidth(buf, &Comic_40_dig);
+    uint16_t tx = x0 + (w > tw ? (w - tw) / 2 : 0);
+
+    const uint16_t topAvail    = 32;
+    const uint16_t bottomZoneH = 74; /* резерв под "Уст" + пресеты */
+    uint16_t bottomAvail = (sh > bottomZoneH) ? (sh - bottomZoneH) : topAvail;
+    uint16_t availH = (bottomAvail > topAvail) ? (bottomAvail - topAvail) : Comic_40_dig.height;
+    uint16_t ty = topAvail + ((availH > Comic_40_dig.height) ? (availH - Comic_40_dig.height) / 2 : 0);
+    DISPLAY_SmartPrint(slotTemp, tx, ty, buf, tempColor, BLACK, &Comic_40_dig);
+
+    /* Уставка */
     uint16_t set = is_solder ? g_TempSettings.targetSetSolder : g_TempSettings.targetSetDesolder;
     snprintf(buf, sizeof(buf), "Уст %3u", set);
-    DISPLAY_SmartPrint(12, 10, 175, buf, GREEN, BLACK, &AntiquaB_24_uni);
+    uint16_t sw2 = DISPLAY_GetTextWidth(buf, &AntiquaB_24_uni);
+    uint16_t sx = x0 + (w > sw2 ? (w - sw2) / 2 : 0);
+    uint16_t sy = (sh > 70) ? (sh - 70) : topAvail;
+    DISPLAY_SmartPrint(slotSet, sx, sy, buf, setColor, BLACK, &AntiquaB_24_uni);
 
-    // Пресеты (Слоты 13, 14, 15)
-    uint16_t* p = is_solder ? &g_TempSettings.preSet1Solder : &g_TempSettings.preSet1Desolder;
-
-    for(int j = 0; j < 3; j++) {
+    /* Пресеты SET1-3 — общие кнопки для обоих инструментов,
+       но хранятся и показываются отдельно для каждого */
+    uint16_t *p = is_solder ? &g_TempSettings.preSet1Solder : &g_TempSettings.preSet1Desolder;
+    uint16_t py = (sh > 35) ? (sh - 35) : topAvail;
+    uint16_t colW = w / 3;
+    for (int j = 0; j < 3; j++) {
         snprintf(buf, sizeof(buf), "%u", *(p + j));
-        DISPLAY_SmartPrint(13 + j, 10 + (j * 95), 210, buf, WHITE, BLACK, &AntiquaB_24_uni);
+        uint16_t pw = DISPLAY_GetTextWidth(buf, &AntiquaB_24_uni);
+        uint16_t px = x0 + j * colW + (colW > pw ? (colW - pw) / 2 : 0);
+        DISPLAY_SmartPrint(slotPreset0 + j, px, py, buf, presetColor, BLACK, &AntiquaB_24_uni);
     }
+}
+
+void UI_DrawMainScreen(void) {
+    static bool tool_prev = true;
+
+    uint16_t sw   = DISPLAY_GetWidth();
+    uint16_t sh   = DISPLAY_GetHeight();
+    uint16_t half = sw / 2;
+
+    bool tool_now = g_WorkFlags.tool; /* true = активен паяльник */
+
+    /* Разделительные линии перерисовываем только при входе на экран
+       (полная перерисовка), не каждый кадр */
+    if (g_forceFullRedraw) {
+        DISPLAY_FillRect(0, 30, sw, 1, GRAY);        /* горизонтальная, под подписями */
+        DISPLAY_FillRect(half - 1, 0, 2, sh, GRAY);  /* вертикальная, между окнами */
+    }
+
+    /* Если сменился активный инструмент — обе колонки перекрашиваются
+       (активная/неактивная меняются местами). SmartPrint сравнивает
+       только текст, а не цвет, поэтому без сброса слотов перекраска
+       была бы пропущена, если сами цифры не изменились. */
+    if (tool_now != tool_prev || g_forceFullRedraw) {
+        for (uint8_t s = 10; s <= 15; s++) DISPLAY_ClearSlot(s);
+        for (uint8_t s = 60; s <= 65; s++) DISPLAY_ClearSlot(s);
+    }
+
+    UI_DrawToolColumn(0,    half,      true,  tool_now);
+    UI_DrawToolColumn(half, sw - half, false, tool_now);
+
+    tool_prev = tool_now;
+    g_forceFullRedraw = false;
 }
 
 void UI_UpdateLoop(void) {
@@ -310,8 +384,10 @@ void UI_UpdateLoop(void) {
         g_lastUICursor = 255;
         g_forceFullRedraw = true;
 
-        /* Заголовок только для не-warn режимов */
-        if (mode != SYS_MODE_EXPERT_WARN) {
+        /* Заголовок — только для не-warn и не-главных режимов:
+           у главного экрана теперь своя подпись в каждом окне */
+        if (mode != SYS_MODE_EXPERT_WARN &&
+            mode != SYS_MODE_MAIN_SOLDER && mode != SYS_MODE_MAIN_DESOLDER) {
             UI_DrawHeader();
         }
 
@@ -325,6 +401,6 @@ void UI_UpdateLoop(void) {
     } else if (mode == SYS_MODE_SERVICE) {
         UI_DrawServiceMenu();
     } else {
-        UI_DrawMainScreen(mode == SYS_MODE_MAIN_SOLDER);
+        UI_DrawMainScreen();
     }
 }

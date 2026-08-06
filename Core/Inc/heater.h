@@ -71,7 +71,7 @@ void HEATER_Tick(void);
 HeaterStatus_t HEATER_GetStatusSolder(void);
 
 /**
- * @brief Статус нагревателя отсоса (заглушка до ADS1234).
+ * @brief Статус нагревателя отсоса.
  */
 HeaterStatus_t HEATER_GetStatusDesolder(void);
 
