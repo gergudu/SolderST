@@ -99,9 +99,13 @@ static void UI_DrawInfoZone(bool full_redraw) {
         g_eepromDotPrev = -1; /* форсируем перерисовку индикатора ниже */
     }
 
-    /* Индикатор записи EEPROM: горит, пока есть несохранённые изменения
-       и не идёт задержка перед записью (см. g_SaveDelayCounter). */
-    bool dot_on = (g_SaveDelayCounter == 0 && CONFIG_IsDirty());
+    /* Индикатор записи EEPROM: горит всё время, пока есть несохранённые
+       изменения — с момента правки значения (включая задержку
+       дебаунса g_SaveDelayCounter) и до фактической записи в EEPROM.
+       Раньше индикатор загорался только в момент самой записи
+       (g_SaveDelayCounter == 0), а это окно — одна проходка главного
+       цикла (~5 мс), физически не видно глазом. */
+    bool dot_on = CONFIG_IsDirty();
     if ((int8_t)dot_on != g_eepromDotPrev) {
         DISPLAY_FillCircle(UI_INFO_EEPROM_X, UI_INFO_EEPROM_Y, UI_INFO_EEPROM_R,
                             dot_on ? WHITE : BLACK);
