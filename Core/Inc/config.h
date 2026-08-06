@@ -17,7 +17,17 @@ extern "C" {
  КОНСТАНТЫ
  ======================================================================= */
 
-#define SAVE_DELAY_TICKS   150
+/* g_SaveDelayCounter декрементируется в TIM5 (100 Гц, тик = 10 мс).
+   200 тиков = 2 секунды задержки перед записью в EEPROM после
+   последнего изменения значения (дебаунс). */
+#define SAVE_DELAY_TICKS   200
+
+/* Время "вспышки" индикатора записи EEPROM в главном цикле (тик = 5 мс,
+   HAL_Delay(5)). Сам факт записи длится ~мс и не виден на экране,
+   поэтому индикатор удерживается включённым это время после успешной
+   записи, чтобы моргание было заметно глазом. 60 тиков = 300 мс. */
+#define EEPROM_FLASH_TICKS 60
+
 #define SET_MIN            50
 #define SET_MAX            450
 
@@ -149,6 +159,11 @@ extern ServiceSettings_t g_ServiceSettings;
 extern SleepCounters_t g_SleepCounters;
 extern volatile DirtyFlags_t g_DirtyFlags;
 extern volatile uint16_t g_SaveDelayCounter;
+
+/* Счётчик "вспышки" индикатора записи EEPROM (см. EEPROM_FLASH_TICKS).
+   Выставляется в main.c сразу после успешной CONFIG_SaveToEEPROM(),
+   декрементируется в главном цикле. Индикатор в UI горит, пока > 0. */
+extern volatile uint16_t g_EepromFlashTicks;
 
 extern uint16_t g_tCurrentSolder;
 extern uint16_t g_tCurrentDesolder;

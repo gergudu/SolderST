@@ -147,8 +147,8 @@ int main(void)
                           vac ? GPIO_PIN_SET : GPIO_PIN_RESET);
     }
 
-    /* Индикатор записи EEPROM теперь рисуется в инфозоне UI
-       (см. UI_DrawInfoZone в ui.c), вызывается из UI_UpdateLoop() ниже */
+    /* Индикатор записи EEPROM (см. UI_DrawInfoZone в ui.c) взводится
+       ниже, в момент реальной отложенной записи — не раньше */
 
     /* FSM кнопок */
     {
@@ -162,9 +162,12 @@ int main(void)
             if (CONFIG_IsDirty()) g_SaveDelayCounter = SAVE_DELAY_TICKS;
         last_mask = g_ButtonContext.stable_mask;
         if (g_SaveDelayCounter == 0 && g_ButtonContext.stable_mask == 0
-                && CONFIG_IsDirty())
-            CONFIG_SaveToEEPROM();
+                && CONFIG_IsDirty()) {
+            if (CONFIG_SaveToEEPROM()) g_EepromFlashTicks = EEPROM_FLASH_TICKS;
+        }
     }
+
+    if (g_EepromFlashTicks) g_EepromFlashTicks--;
 
     UI_UpdateLoop();
     HAL_Delay(5);
