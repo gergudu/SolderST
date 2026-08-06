@@ -100,6 +100,7 @@ int main(void)
   MX_SPI2_Init();
   MX_TIM10_Init();
   /* USER CODE BEGIN 2 */
+
   CONFIG_Init();
   ST7789_Init();
   DISPLAY_RegisterDriver(&st7789_interface);
