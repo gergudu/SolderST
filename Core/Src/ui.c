@@ -19,8 +19,21 @@ extern bool g_UI_NeedsClear;
 /* Настройки интерфейса — вычисляются из размеров дисплея при первом вызове */
 #define UI_MARGIN_LEFT     10
 
-/* Высота заголовка (разделитель на y=30, текст выше) */
-#define UI_HEADER_H        34
+/* Инфозона — верхняя полоса дисплея под системные индикаторы
+   (запись EEPROM, позже — таймеры сна и т.п.). Разделительная
+   линия рисуется по её нижней границе (y = UI_INFO_ZONE_H - 1). */
+#define UI_INFO_ZONE_H     30
+
+/* Индикатор записи EEPROM — кружок в инфозоне */
+#define UI_INFO_EEPROM_X   16
+#define UI_INFO_EEPROM_Y   15
+#define UI_INFO_EEPROM_R   6
+
+/* Заголовки окон опущены под инфозону и используют шрифт 16
+   (AntiquaB_16_uni: height=18px). */
+#define UI_HEADER_FONT     AntiquaB_16_uni
+#define UI_HEADER_TEXT_Y   (UI_INFO_ZONE_H + 3)
+#define UI_HEADER_ROW_H    22   /* 18px шрифт + отступы сверху/снизу */
 
 /* Шрифт меню — высота глифа определяет строку.
    AntiquaB_24: height≈28px, добавляем 7px зазора = 35px.
@@ -28,13 +41,16 @@ extern bool g_UI_NeedsClear;
 #define UI_FONT_H          28
 #define UI_LINE_GAP        7
 #define UI_LINE_HEIGHT     (UI_FONT_H + UI_LINE_GAP)
-#define UI_MENU_START_Y    (UI_HEADER_H + 2)
+#define UI_MENU_START_Y    (UI_INFO_ZONE_H + UI_HEADER_ROW_H + 2)
 
 static char buf[32];
 static SystemMode_t g_prevMode = SYS_MODE_MAIN_SOLDER;
 static bool g_forceFullRedraw = false;
 
 static uint8_t g_lastUICursor = 255;
+
+/* Состояние индикатора записи EEPROM в инфозоне (-1 — принудительная перерисовка) */
+static int8_t g_eepromDotPrev = -1;
 
 /* ========================================================================== */
 /* Вспомогательные функции (снижение цикломатической сложности)               */
@@ -62,6 +78,39 @@ static void FormatMenuValue(char* out_buf, size_t size, uint8_t idx, bool isSele
     // Выбор формата: с рамками при редактировании или обычный
     const char* fmt = (isEditing && isSelected) ? "[%3u]" : " %3u ";
     snprintf(out_buf, size, fmt, val);
+}
+
+/**
+ * @brief Отрисовка инфозоны (верхние 30px экрана).
+ *
+ * Рисуется на каждом проходе UI_UpdateLoop, независимо от текущего
+ * режима — индикаторы должны быть видны всегда, поверх любого экрана.
+ *
+ * @param full_redraw  true — фон и рамка инфозоны были стёрты (смена
+ *                      режима/полная перерисовка), нужно перерисовать
+ *                      всё содержимое, а не только изменившееся.
+ */
+static void UI_DrawInfoZone(bool full_redraw) {
+    uint16_t sw = DISPLAY_GetWidth();
+
+    if (full_redraw) {
+        DISPLAY_FillRect(0, 0, sw, UI_INFO_ZONE_H, BLACK);
+        DISPLAY_FillRect(0, UI_INFO_ZONE_H - 1, sw, 1, GRAY);
+        g_eepromDotPrev = -1; /* форсируем перерисовку индикатора ниже */
+    }
+
+    /* Индикатор записи EEPROM: горит, пока есть несохранённые изменения
+       и не идёт задержка перед записью (см. g_SaveDelayCounter). */
+    bool dot_on = (g_SaveDelayCounter == 0 && CONFIG_IsDirty());
+    if ((int8_t)dot_on != g_eepromDotPrev) {
+        DISPLAY_FillCircle(UI_INFO_EEPROM_X, UI_INFO_EEPROM_Y, UI_INFO_EEPROM_R,
+                            dot_on ? WHITE : BLACK);
+        g_eepromDotPrev = dot_on;
+    }
+
+    /* TODO: индикаторы таймеров сна (PreSleep/Standby) — разместить
+       правее, в свободной части инфозоны, отдельно для паяльника
+       и отсоса. Резерв места уже заложен высотой инфозоны 30px. */
 }
 
 /* ========================================================================== */
@@ -189,12 +238,12 @@ void UI_DrawHeader(void) {
         titleColor = CYAN;
     }
 
-    DISPLAY_FillRect(0, 30, sw, 1, GRAY);
+    /* Разделительная линия под инфозоной рисуется в UI_DrawInfoZone() */
 
-    uint16_t tw = DISPLAY_GetTextWidth(title, &AntiquaB_24_uni);
+    uint16_t tw = DISPLAY_GetTextWidth(title, &UI_HEADER_FONT);
     uint16_t x_pos = (sw > tw) ? (sw - tw) / 2 : 0;
 
-    DISPLAY_Print(x_pos, 4, title, &AntiquaB_24_uni, titleColor, BLACK);
+    DISPLAY_Print(x_pos, UI_HEADER_TEXT_Y, title, &UI_HEADER_FONT, titleColor, BLACK);
 }
 
 void UI_DrawServiceMenu(void) {
@@ -293,51 +342,60 @@ static void UI_DrawToolColumn(uint16_t x0, uint16_t w, bool is_solder, bool acti
     uint16_t labelColor   = active ? CYAN  : GRAY;
     uint16_t tempColor    = active ? WHITE : GRAY;
     uint16_t setColor     = active ? GREEN : GRAY;
-    uint16_t presetColor  = active ? WHITE : GRAY;
 
     uint8_t slotLabel   = is_solder ? 10 : 60;
     uint8_t slotTemp    = is_solder ? 11 : 61;
     uint8_t slotSet     = is_solder ? 12 : 62;
-    uint8_t slotPreset0 = is_solder ? 13 : 63;
 
-    /* Подпись окна, шрифт 24px */
+    /* Подпись окна — под инфозоной, шрифт 16px */
     const char *label = is_solder ? "ПАЯЛЬНИК" : "ОТСОС";
-    uint16_t lw = DISPLAY_GetTextWidth(label, &AntiquaB_24_uni);
+    uint16_t lw = DISPLAY_GetTextWidth(label, &UI_HEADER_FONT);
     uint16_t lx = x0 + (w > lw ? (w - lw) / 2 : 0);
-    DISPLAY_SmartPrint(slotLabel, lx, 4, label, labelColor, BLACK, &AntiquaB_24_uni);
+    DISPLAY_SmartPrint(slotLabel, lx, UI_HEADER_TEXT_Y, label, labelColor, BLACK, &UI_HEADER_FONT);
 
     /* Текущая температура — по вертикали центрируется в зоне между
-       разделительной линией (y=32) и блоком уставки/пресетов внизу */
+       строкой заголовка и блоком уставки внизу */
     int16_t cur = is_solder ? g_tCurrentSolder : g_tCurrentDesolder;
     snprintf(buf, sizeof(buf), "%3u", (uint16_t)cur);
     uint16_t tw = DISPLAY_GetTextWidth(buf, &Comic_40_dig);
     uint16_t tx = x0 + (w > tw ? (w - tw) / 2 : 0);
 
-    const uint16_t topAvail    = 32;
-    const uint16_t bottomZoneH = 74; /* резерв под "Уст" + пресеты */
+    const uint16_t topAvail    = UI_MENU_START_Y;
+    const uint16_t bottomZoneH = 74; /* резерв под "Уст" + общую строку пресетов */
     uint16_t bottomAvail = (sh > bottomZoneH) ? (sh - bottomZoneH) : topAvail;
     uint16_t availH = (bottomAvail > topAvail) ? (bottomAvail - topAvail) : Comic_40_dig.height;
     uint16_t ty = topAvail + ((availH > Comic_40_dig.height) ? (availH - Comic_40_dig.height) / 2 : 0);
     DISPLAY_SmartPrint(slotTemp, tx, ty, buf, tempColor, BLACK, &Comic_40_dig);
 
-    /* Уставка */
+    /* Уставка — своя для каждого инструмента */
     uint16_t set = is_solder ? g_TempSettings.targetSetSolder : g_TempSettings.targetSetDesolder;
     snprintf(buf, sizeof(buf), "Уст %3u", set);
     uint16_t sw2 = DISPLAY_GetTextWidth(buf, &AntiquaB_24_uni);
     uint16_t sx = x0 + (w > sw2 ? (w - sw2) / 2 : 0);
     uint16_t sy = (sh > 70) ? (sh - 70) : topAvail;
     DISPLAY_SmartPrint(slotSet, sx, sy, buf, setColor, BLACK, &AntiquaB_24_uni);
+}
 
-    /* Пресеты SET1-3 — общие кнопки для обоих инструментов,
-       но хранятся и показываются отдельно для каждого */
-    uint16_t *p = is_solder ? &g_TempSettings.preSet1Solder : &g_TempSettings.preSet1Desolder;
-    uint16_t py = (sh > 35) ? (sh - 35) : topAvail;
-    uint16_t colW = w / 3;
+/**
+ * @brief Отрисовка общей строки пресетов SET1-3 (на всю ширину экрана,
+ *        одна на оба инструмента — показывает пресеты активного инструмента).
+ *        Не делится вертикальной полосой между окнами.
+ * @param active_is_solder  true — показать пресеты паяльника, иначе отсоса
+ */
+static void UI_DrawSharedPresetRow(bool active_is_solder) {
+    uint16_t sw = DISPLAY_GetWidth();
+    uint16_t sh = DISPLAY_GetHeight();
+
+    uint16_t *p = active_is_solder ? &g_TempSettings.preSet1Solder
+                                    : &g_TempSettings.preSet1Desolder;
+    uint16_t py   = (sh > 35) ? (sh - 35) : UI_MENU_START_Y;
+    uint16_t colW = sw / 3;
+
     for (int j = 0; j < 3; j++) {
         snprintf(buf, sizeof(buf), "%u", *(p + j));
         uint16_t pw = DISPLAY_GetTextWidth(buf, &AntiquaB_24_uni);
-        uint16_t px = x0 + j * colW + (colW > pw ? (colW - pw) / 2 : 0);
-        DISPLAY_SmartPrint(slotPreset0 + j, px, py, buf, presetColor, BLACK, &AntiquaB_24_uni);
+        uint16_t px = j * colW + (colW > pw ? (colW - pw) / 2 : 0);
+        DISPLAY_SmartPrint(70 + j, px, py, buf, WHITE, BLACK, &AntiquaB_24_uni);
     }
 }
 
@@ -351,23 +409,31 @@ void UI_DrawMainScreen(void) {
     bool tool_now = g_WorkFlags.tool; /* true = активен паяльник */
 
     /* Разделительные линии перерисовываем только при входе на экран
-       (полная перерисовка), не каждый кадр */
+       (полная перерисовка), не каждый кадр. Горизонтальная линия под
+       инфозоной уже рисуется в UI_DrawInfoZone(). Вертикальная линия
+       между окнами не должна заходить в инфозону (сверху) и в общую
+       строку пресетов SET1-3 (снизу) — она их не разделяет. */
     if (g_forceFullRedraw) {
-        DISPLAY_FillRect(0, 30, sw, 1, GRAY);        /* горизонтальная, под подписями */
-        DISPLAY_FillRect(half - 1, 0, 2, sh, GRAY);  /* вертикальная, между окнами */
+        uint16_t presetY = (sh > 35) ? (sh - 35) : UI_MENU_START_Y;
+        uint16_t vTop    = UI_INFO_ZONE_H;
+        uint16_t vBottom = (presetY > vTop + 6) ? (presetY - 6) : vTop;
+        DISPLAY_FillRect(half - 1, vTop, 2, vBottom - vTop, GRAY);
     }
 
     /* Если сменился активный инструмент — обе колонки перекрашиваются
-       (активная/неактивная меняются местами). SmartPrint сравнивает
-       только текст, а не цвет, поэтому без сброса слотов перекраска
-       была бы пропущена, если сами цифры не изменились. */
+       (активная/неактивная меняются местами), плюс общая строка
+       пресетов показывает значения другого инструмента. SmartPrint
+       сравнивает только текст, а не цвет, поэтому без сброса слотов
+       перекраска была бы пропущена, если сами цифры не изменились. */
     if (tool_now != tool_prev || g_forceFullRedraw) {
         for (uint8_t s = 10; s <= 15; s++) DISPLAY_ClearSlot(s);
         for (uint8_t s = 60; s <= 65; s++) DISPLAY_ClearSlot(s);
+        for (uint8_t s = 70; s <= 72; s++) DISPLAY_ClearSlot(s);
     }
 
     UI_DrawToolColumn(0,    half,      true,  tool_now);
     UI_DrawToolColumn(half, sw - half, false, tool_now);
+    UI_DrawSharedPresetRow(tool_now);
 
     tool_prev = tool_now;
     g_forceFullRedraw = false;
@@ -377,21 +443,26 @@ void UI_UpdateLoop(void) {
     SystemMode_t mode = STATE_GetMode();
 
     /* Полная перерисовка при смене режима */
-    if (mode != g_prevMode || STATE_CheckAndResetDirty()) {
+    bool mode_changed = (mode != g_prevMode) || STATE_CheckAndResetDirty();
+    if (mode_changed) {
         DISPLAY_FillScreen(BLACK);
         DISPLAY_ClearAllSlots();
 
         g_lastUICursor = 255;
         g_forceFullRedraw = true;
 
-        /* Заголовок — только для не-warn и не-главных режимов:
-           у главного экрана теперь своя подпись в каждом окне */
-        if (mode != SYS_MODE_EXPERT_WARN &&
-            mode != SYS_MODE_MAIN_SOLDER && mode != SYS_MODE_MAIN_DESOLDER) {
-            UI_DrawHeader();
-        }
-
         g_prevMode = mode;
+    }
+
+    /* Инфозона (индикаторы) рисуется на каждом проходе, поверх
+       любого режима — включая экран EXPERT_WARN. */
+    UI_DrawInfoZone(mode_changed);
+
+    /* Заголовок — только для не-warn и не-главных режимов:
+       у главного экрана теперь своя подпись в каждом окне */
+    if (mode_changed && mode != SYS_MODE_EXPERT_WARN &&
+        mode != SYS_MODE_MAIN_SOLDER && mode != SYS_MODE_MAIN_DESOLDER) {
+        UI_DrawHeader();
     }
 
     if (mode == SYS_MODE_EXPERT_WARN) {

@@ -147,15 +147,8 @@ int main(void)
                           vac ? GPIO_PIN_SET : GPIO_PIN_RESET);
     }
 
-    /* Индикатор записи EEPROM — кружок в верхнем левом углу */
-    {
-        static bool dot_prev = false;
-        bool dot_on = (g_SaveDelayCounter == 0 && CONFIG_IsDirty());
-        if (dot_on != dot_prev) {
-            DISPLAY_FillCircle(8, 8, 6, dot_on ? WHITE : BLACK);
-            dot_prev = dot_on;
-        }
-    }
+    /* Индикатор записи EEPROM теперь рисуется в инфозоне UI
+       (см. UI_DrawInfoZone в ui.c), вызывается из UI_UpdateLoop() ниже */
 
     /* FSM кнопок */
     {
