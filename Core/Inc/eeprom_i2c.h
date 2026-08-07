@@ -25,6 +25,11 @@ typedef enum {
     EEPROM_TIMEOUT
 } EEPROM_Status_t;
 
+/* Неисправность EEPROM: выставляется при первой неудачной операции
+   чтения/записи через EEPROM_I2C_Read/Write и залипает до перезагрузки
+   (программно нигде не сбрасывается). См. UI_DrawInfoZone. */
+extern volatile bool g_EepromFault;
+
 /* ================= API ================= */
 
 EEPROM_Status_t EEPROM_I2C_Init(void);

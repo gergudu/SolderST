@@ -136,6 +136,24 @@ int main(void)
         }
     }
 
+    /* Авто-переключение фокуса: если активный инструмент стал
+       неисправен/отключен прямо во время работы, а другой в порядке —
+       молча переносим фокус на исправный. Не делаем этого, пока
+       пользователь реально что-то редактирует (правит значение в
+       Service/Expert), чтобы не сбить его посреди правки. */
+    {
+        bool active_ok = HEATER_IsToolOk(g_WorkFlags.tool);
+        bool other_ok  = HEATER_IsToolOk(!g_WorkFlags.tool);
+        bool editing   = STATE_IsEditing() || STATE_IsExpertEditing();
+        if (!active_ok && other_ok && !editing) {
+            g_WorkFlags.tool = !g_WorkFlags.tool;
+            g_UI_NeedsClear = true;
+            if (STATE_GetMode() == SYS_MODE_MAIN_SOLDER || STATE_GetMode() == SYS_MODE_MAIN_DESOLDER) {
+                STATE_SetMode(g_WorkFlags.tool ? SYS_MODE_MAIN_SOLDER : SYS_MODE_MAIN_DESOLDER);
+            }
+        }
+    }
+
     /* Насос: PB13 = кнопка PB12 (удержание = работает)
      * Передний фронт — сброс таймера сна отсоса */
     {

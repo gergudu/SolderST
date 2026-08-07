@@ -186,13 +186,23 @@ EEPROM_Status_t EEPROM_I2C_Erase(uint8_t fill_value)
 
 /* ================= Compatible API ================= */
 
+/* Залипает в true при первой неудачной операции чтения/записи и НЕ
+   сбрасывается программно (по требованию — до перезагрузки). Единая
+   точка входа для обеих обёрток ниже, которыми пользуется весь
+   остальной код (config.c и т.д.). */
+volatile bool g_EepromFault = false;
+
 bool EEPROM_I2C_Read(uint16_t address, uint8_t *data, uint16_t size)
 {
-    return (EEPROM_I2C_ReadBuffer(address, data, size) == EEPROM_OK);
+    bool ok = (EEPROM_I2C_ReadBuffer(address, data, size) == EEPROM_OK);
+    if (!ok) g_EepromFault = true;
+    return ok;
 }
 
 bool EEPROM_I2C_Write(uint16_t address, uint8_t *data, uint16_t size)
 {
     /* Приводим const uint8_t* к uint8_t* для совместимости */
-    return (EEPROM_I2C_WriteBuffer(address, (const uint8_t*)data, size) == EEPROM_OK);
+    bool ok = (EEPROM_I2C_WriteBuffer(address, (const uint8_t*)data, size) == EEPROM_OK);
+    if (!ok) g_EepromFault = true;
+    return ok;
 }

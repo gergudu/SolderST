@@ -6,6 +6,7 @@
 #include "state.h"
 #include "config.h"
 #include "buttons.h"
+#include "heater.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -228,7 +229,9 @@ void STATE_MenuToggleEdit(void) {
 void STATE_MenuClick(void) { STATE_MenuToggleEdit(); }
 
 void STATE_ServiceToggleTool(void) {
-    g_WorkFlags.tool = !g_WorkFlags.tool;
+    bool want_solder = !g_WorkFlags.tool;
+    if (!HEATER_IsToolOk(want_solder)) return; /* инструмент неисправен/не подключен */
+    g_WorkFlags.tool = want_solder;
     g_UI_NeedsClear = true;
 }
 

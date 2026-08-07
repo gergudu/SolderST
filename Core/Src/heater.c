@@ -48,6 +48,8 @@ typedef struct {
     uint32_t     pwm_counter;   /* Счётчик ШИМ 0..PWM_PERIOD_TICKS-1 */
     uint32_t     duty_ticks;    /* Количество тиков HIGH за период */
     uint32_t     pid_counter;   /* Счётчик для запуска ПИД */
+    RtdFault_t   fault_candidate;  /* см. EvaluateRtdFault + дебаунс */
+    uint16_t     fault_debounce;
 } HeaterChannel_t;
 
 /* =========================================================================
@@ -55,7 +57,7 @@ typedef struct {
  * ========================================================================= */
 
 static HeaterChannel_t s_solder;
-static HeaterChannel_t s_desolder;  /* Заглушка до ADS1234 */
+static HeaterChannel_t s_desolder;  /* ПИД/нагрев отсоса пока не реализован — см. Channel_Tick_Desolder */
 
 /* =========================================================================
  * Публичные функции
@@ -182,6 +184,7 @@ static float __attribute__((unused)) GetTargetDesolder(void) {
  */
 void HEATER_OnSleepTickSolder(void) {
     if (!g_WorkFlags.pwrIsOnSolder) return;
+    if (!s_solder.status.is_ok) return; /* канал неисправен/не подключен — таймер сна не тикает */
 
     switch (s_solder.sleep_state) {
         case SLEEP_STATE_ACTIVE:
@@ -210,6 +213,7 @@ void HEATER_OnSleepTickSolder(void) {
 
 void HEATER_OnSleepTickDesolder(void) {
     if (!g_WorkFlags.pwrIsOnVac) return;
+    if (!s_desolder.status.is_ok) return; /* канал неисправен/не подключен — таймер сна не тикает */
 
     switch (s_desolder.sleep_state) {
         case SLEEP_STATE_ACTIVE:
@@ -234,8 +238,47 @@ void HEATER_OnSleepTickDesolder(void) {
 }
 
 /* =========================================================================
- * Внутренние функции: один тик канала (вызов из HEATER_Tick)
+ * Внутренние функции: диагностика RTD/подключения
  * ========================================================================= */
+
+/** Порог "нереальной" температуры — за пределами реальный RTD не читает */
+#define RTD_FAULT_HIGH_C   500
+
+/** Дебаунс смены статуса неисправности: 40 тиков @ 200 Гц = 200 мс.
+    Защита от одиночного выброса АЦП/дребезга Test-пина. */
+#define RTD_FAULT_DEBOUNCE_TICKS  40u
+
+static RtdFault_t EvaluateRtdFault(uint16_t temp_c, bool heater_ok) {
+    if (!heater_ok) {
+        /* Test = 0: цепь нагревателя разомкнута — считаем, что
+           инструмент просто не подключен (не различаем показание ADS) */
+        return RTD_NOT_CONNECTED;
+    }
+    if (temp_c == 0)                return RTD_SHORT;
+    if (temp_c > RTD_FAULT_HIGH_C)  return RTD_OPEN;
+    return RTD_OK;
+}
+
+/**
+ * @brief Применяет дебаунс к новому вычисленному состоянию RTD и
+ *        обновляет ch->status.rtd_fault/is_ok только после того, как
+ *        состояние продержалось стабильным RTD_FAULT_DEBOUNCE_TICKS тиков.
+ */
+static void UpdateRtdFault(HeaterChannel_t *ch, uint16_t temp_c, bool heater_ok) {
+    RtdFault_t candidate = EvaluateRtdFault(temp_c, heater_ok);
+
+    if (candidate != ch->fault_candidate) {
+        ch->fault_candidate = candidate;
+        ch->fault_debounce  = 0;
+    } else if (ch->fault_debounce < RTD_FAULT_DEBOUNCE_TICKS) {
+        ch->fault_debounce++;
+    }
+
+    if (ch->fault_debounce >= RTD_FAULT_DEBOUNCE_TICKS) {
+        ch->status.rtd_fault = candidate;
+        ch->status.is_ok     = (candidate == RTD_OK);
+    }
+}
 
 static void Channel_Tick_Solder(void) {
     bool enabled = g_WorkFlags.pwrIsOnSolder;
@@ -269,14 +312,23 @@ static void Channel_Tick_Solder(void) {
 
     bool pwm_on = (s_solder.pwm_counter < s_solder.duty_ticks);
 
-    /* --- Контроль целостности (пока ключ закрыт) --- */
+    /* --- Контроль целостности нагревателя (пока ключ закрыт) --- */
     if (!pwm_on) {
         s_solder.status.heater_ok = Solder_TestPin();
     }
 
-    /* --- Управление ключом --- */
-    bool drive = enabled && pwm_on && s_solder.status.heater_ok;
+    /* --- Диагностика RTD/подключения (ADS1220 + Test) --- */
+    UpdateRtdFault(&s_solder, g_tCurrentSolder, s_solder.status.heater_ok);
+
+    /* --- Управление ключом ---
+       ВАЖНО: гейтим не только по heater_ok (цепь нагревателя цела),
+       но и по status.is_ok — иначе при обрыве/КЗ RTD ПИД продолжит
+       слепо греть по заведомо неверному показанию температуры. */
+    bool drive = enabled && pwm_on && s_solder.status.is_ok;
     Solder_SetPin(drive);
+    if (!s_solder.status.is_ok) {
+        PID_Reset(&s_solder.pid); /* не копим интеграл, пока канал заблокирован */
+    }
 
     /* --- Статус --- */
     s_solder.status.in_presleep = (s_solder.sleep_state == SLEEP_STATE_PRESLEEP);
@@ -284,11 +336,14 @@ static void Channel_Tick_Solder(void) {
 }
 
 static void Channel_Tick_Desolder(void) {
-    /* Заглушка до ADS1234: держим нагреватель выключенным,
-       контроль целостности опрашиваем */
+    /* ПИД/нагрев отсоса пока не реализован — ключ всегда выключен.
+       Диагностика RTD/подключения при этом уже полноценно рабочая,
+       т.к. чтение ADS1220 для отсоса реализовано. */
     Desolder_SetPin(false);
     s_desolder.status.heater_ok = Desolder_TestPin();
     s_desolder.status.duty = 0.0f;
+
+    UpdateRtdFault(&s_desolder, g_tCurrentDesolder, s_desolder.status.heater_ok);
 }
 
 /* =========================================================================
@@ -335,6 +390,10 @@ HeaterStatus_t HEATER_GetStatusSolder(void) {
 
 HeaterStatus_t HEATER_GetStatusDesolder(void) {
     return s_desolder.status;
+}
+
+bool HEATER_IsToolOk(bool solder) {
+    return solder ? s_solder.status.is_ok : s_desolder.status.is_ok;
 }
 
 void HEATER_ResetSleepSolder(void) {

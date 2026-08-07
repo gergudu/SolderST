@@ -9,6 +9,8 @@
 #include "fonts.h"
 #include "display.h"
 #include "main.h"
+#include "heater.h"
+#include "eeprom_i2c.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -110,6 +112,16 @@ static void UI_DrawInfoZone(bool full_redraw) {
         DISPLAY_FillCircle(UI_INFO_EEPROM_X, UI_INFO_EEPROM_Y, UI_INFO_EEPROM_R,
                             dot_on ? WHITE : BLACK);
         g_eepromDotPrev = dot_on;
+    }
+
+    /* Неисправность EEPROM — залипающая до перезагрузки (см. eeprom_i2c.c),
+       поэтому просто рисуем один раз и оставляем: SmartPrint сам не будет
+       перерисовывать неизменившийся текст. */
+    if (g_EepromFault) {
+        uint16_t y = UI_INFO_ZONE_H > UI_HEADER_FONT.height
+                   ? (UI_INFO_ZONE_H - UI_HEADER_FONT.height) / 2 : 0;
+        DISPLAY_SmartPrint(90, UI_INFO_EEPROM_X + UI_INFO_EEPROM_R + 6, y,
+                           "Err EEPROM", RED, BLACK, &UI_HEADER_FONT);
     }
 
     /* TODO: индикаторы таймеров сна (PreSleep/Standby) — разместить
@@ -336,14 +348,24 @@ void UI_DrawServiceMenu(void) {
  * @param w                 Ширина колонки в пикселях
  * @param is_solder         true — это колонка паяльника, false — отсоса
  * @param active_tool_is_solder  true, если сейчас выбран (активен) паяльник
+ * @param fault             Состояние RTD/подключения этого инструмента
+ * @param force_clear       true — физически стереть зону температуры перед
+ *                           отрисовкой (смена типа содержимого: цифры /
+ *                           "неисправно" / пусто — иначе могут остаться
+ *                           огрызки старого содержимого)
  */
-static void UI_DrawToolColumn(uint16_t x0, uint16_t w, bool is_solder, bool active_tool_is_solder) {
+static void UI_DrawToolColumn(uint16_t x0, uint16_t w, bool is_solder,
+                               bool active_tool_is_solder,
+                               RtdFault_t fault, bool force_clear) {
     uint16_t sh = DISPLAY_GetHeight();
     bool active = (is_solder == active_tool_is_solder);
+    bool ok     = (fault == RTD_OK);
+    bool faulty = (fault == RTD_SHORT || fault == RTD_OPEN);
 
-    /* Неактивный инструмент — целиком серый (подпись и температура,
-       остальное для единообразия туда же) */
-    uint16_t labelColor   = active ? CYAN  : GRAY;
+    /* Неисправность/отключение — заголовок красным вне зависимости от
+       того, активен ли сейчас этот инструмент. Иначе — обычная логика
+       активный/неактивный (серый). */
+    uint16_t labelColor   = !ok ? RED : (active ? CYAN : GRAY);
     uint16_t tempColor    = active ? WHITE : GRAY;
     uint16_t setColor     = active ? GREEN : GRAY;
 
@@ -357,19 +379,43 @@ static void UI_DrawToolColumn(uint16_t x0, uint16_t w, bool is_solder, bool acti
     uint16_t lx = x0 + (w > lw ? (w - lw) / 2 : 0);
     DISPLAY_SmartPrint(slotLabel, lx, UI_HEADER_TEXT_Y, label, labelColor, BLACK, &UI_HEADER_FONT);
 
-    /* Текущая температура — по вертикали центрируется в зоне между
-       строкой заголовка и блоком уставки внизу */
-    int16_t cur = is_solder ? g_tCurrentSolder : g_tCurrentDesolder;
-    snprintf(buf, sizeof(buf), "%3u", (uint16_t)cur);
-    uint16_t tw = DISPLAY_GetTextWidth(buf, &Comic_40_dig);
-    uint16_t tx = x0 + (w > tw ? (w - tw) / 2 : 0);
-
     const uint16_t topAvail    = UI_MENU_START_Y;
     const uint16_t bottomZoneH = 74; /* резерв под "Уст" + общую строку пресетов */
     uint16_t bottomAvail = (sh > bottomZoneH) ? (sh - bottomZoneH) : topAvail;
-    uint16_t availH = (bottomAvail > topAvail) ? (bottomAvail - topAvail) : Comic_40_dig.height;
-    uint16_t ty = topAvail + ((availH > Comic_40_dig.height) ? (availH - Comic_40_dig.height) / 2 : 0);
-    DISPLAY_SmartPrint(slotTemp, tx, ty, buf, tempColor, BLACK, &Comic_40_dig);
+    uint16_t availH = (bottomAvail > topAvail) ? (bottomAvail - topAvail) : 0;
+
+    if (force_clear && availH > 0) {
+        /* Тип содержимого этой зоны мог смениться (цифры <-> "неисправно"
+           <-> пусто) — SmartPrint сравнивает только текст, так что старое
+           содержимое иначе может остаться видно рядом с новым. */
+        DISPLAY_FillRect(x0, topAvail, w, availH, BLACK);
+    }
+
+    if (!ok) {
+        if (faulty) {
+            /* Инструмент подключен (Test=1), но RTD неисправен */
+            const char *msg = "неисправно";
+            uint16_t mw = DISPLAY_GetTextWidth(msg, &UI_HEADER_FONT);
+            uint16_t mx = x0 + (w > mw ? (w - mw) / 2 : 0);
+            uint16_t my = topAvail + ((availH > UI_HEADER_FONT.height) ? (availH - UI_HEADER_FONT.height) / 2 : 0);
+            DISPLAY_SmartPrint(slotTemp, mx, my, msg, RED, BLACK, &UI_HEADER_FONT);
+        } else {
+            /* Не подключен — показания ADS1220 не выводим (пусто).
+               Инвалидируем кэш слота: иначе после переподключения с
+               тем же числом, что было до отключения, SmartPrint решит,
+               что рисовать не надо, хотя пиксели уже стёрты выше. */
+            DISPLAY_ClearSlot(slotTemp);
+        }
+    } else {
+        /* Текущая температура — по вертикали центрируется в зоне между
+           строкой заголовка и блоком уставки внизу */
+        int16_t cur = is_solder ? g_tCurrentSolder : g_tCurrentDesolder;
+        snprintf(buf, sizeof(buf), "%3u", (uint16_t)cur);
+        uint16_t tw = DISPLAY_GetTextWidth(buf, &Comic_40_dig);
+        uint16_t tx = x0 + (w > tw ? (w - tw) / 2 : 0);
+        uint16_t ty = topAvail + ((availH > Comic_40_dig.height) ? (availH - Comic_40_dig.height) / 2 : 0);
+        DISPLAY_SmartPrint(slotTemp, tx, ty, buf, tempColor, BLACK, &Comic_40_dig);
+    }
 
     /* Уставка — своя для каждого инструмента */
     uint16_t set = is_solder ? g_TempSettings.targetSetSolder : g_TempSettings.targetSetDesolder;
@@ -404,13 +450,17 @@ static void UI_DrawSharedPresetRow(bool active_is_solder) {
 }
 
 void UI_DrawMainScreen(void) {
-    static bool tool_prev = true;
+    static bool       tool_prev          = true;
+    static RtdFault_t solderFaultPrev    = RTD_OK;
+    static RtdFault_t desolderFaultPrev  = RTD_OK;
 
     uint16_t sw   = DISPLAY_GetWidth();
     uint16_t sh   = DISPLAY_GetHeight();
     uint16_t half = sw / 2;
 
     bool tool_now = g_WorkFlags.tool; /* true = активен паяльник */
+    RtdFault_t solderFault   = HEATER_GetStatusSolder().rtd_fault;
+    RtdFault_t desolderFault = HEATER_GetStatusDesolder().rtd_fault;
 
     /* Разделительные линии перерисовываем только при входе на экран
        (полная перерисовка), не каждый кадр. Горизонтальная линия под
@@ -424,23 +474,28 @@ void UI_DrawMainScreen(void) {
         DISPLAY_FillRect(half - 1, vTop, 2, vBottom - vTop, GRAY);
     }
 
-    /* Если сменился активный инструмент — обе колонки перекрашиваются
-       (активная/неактивная меняются местами), плюс общая строка
-       пресетов показывает значения другого инструмента. SmartPrint
-       сравнивает только текст, а не цвет, поэтому без сброса слотов
-       перекраска была бы пропущена, если сами цифры не изменились. */
-    if (tool_now != tool_prev || g_forceFullRedraw) {
+    /* Полная перерисовка обеих колонок нужна при: смене активного
+       инструмента (перекраска active/inactive), смене состояния
+       неисправности любого из инструментов (тип содержимого меняется:
+       цифры/"неисправно"/пусто) или общей полной перерисовке экрана.
+       SmartPrint сравнивает только текст, а не цвет, поэтому без
+       сброса слотов перекраска была бы пропущена. */
+    bool fault_changed = (solderFault != solderFaultPrev) || (desolderFault != desolderFaultPrev);
+    bool need_reset = tool_now != tool_prev || g_forceFullRedraw || fault_changed;
+    if (need_reset) {
         for (uint8_t s = 10; s <= 15; s++) DISPLAY_ClearSlot(s);
         for (uint8_t s = 60; s <= 65; s++) DISPLAY_ClearSlot(s);
         for (uint8_t s = 16; s <= 18; s++) DISPLAY_ClearSlot(s);
     }
 
-    UI_DrawToolColumn(0,    half,      true,  tool_now);
-    UI_DrawToolColumn(half, sw - half, false, tool_now);
+    UI_DrawToolColumn(0,    half,      true,  tool_now, solderFault,   need_reset);
+    UI_DrawToolColumn(half, sw - half, false, tool_now, desolderFault, need_reset);
     UI_DrawSharedPresetRow(tool_now);
 
-    tool_prev = tool_now;
-    g_forceFullRedraw = false;
+    tool_prev         = tool_now;
+    solderFaultPrev   = solderFault;
+    desolderFaultPrev = desolderFault;
+    g_forceFullRedraw  = false;
 }
 
 void UI_UpdateLoop(void) {

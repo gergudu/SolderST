@@ -43,10 +43,34 @@ typedef struct {
     float integral_limit;   /* Ограничение интегральной составляющей */
 } PID_t;
 
+/**
+ * @brief Состояние RTD-датчика/подключения инструмента.
+ *
+ * Определяется по комбинации показания ADS1220 (температура после
+ * пересчёта, °C) и состояния Solder_Test/Desolder_Test (нагреватель
+ * должен быть выключен в момент опроса Test — см. Channel_Tick_*):
+ *
+ *   Test = 0 (нагреватель разомкнут)  → RTD_NOT_CONNECTED, независимо
+ *                                        от показаний ADS1220
+ *   Test = 1, показание == 0 °C       → RTD_SHORT  (RTD в коротком)
+ *   Test = 1, показание > 500 °C      → RTD_OPEN   (обрыв RTD)
+ *   Test = 1, показание в норме       → RTD_OK
+ */
+typedef enum {
+    RTD_OK = 0,
+    RTD_NOT_CONNECTED,
+    RTD_SHORT,
+    RTD_OPEN,
+} RtdFault_t;
+
 typedef struct {
-    bool  heater_ok;        /* false = обрыв/КЗ нагревателя */
-    bool  in_presleep;      /* прибор в полусне */
-    float duty;             /* текущий duty цикл 0.0..1.0 */
+    bool       heater_ok;     /* false = обрыв/КЗ нагревателя (Test pin) */
+    bool       in_presleep;   /* прибор в полусне */
+    float      duty;          /* текущий duty цикл 0.0..1.0 */
+    RtdFault_t rtd_fault;     /* см. RtdFault_t */
+    bool       is_ok;         /* true только при rtd_fault == RTD_OK;
+                                  разрешает ПИД, переключение фокуса Tools
+                                  и таймеры сна для этого канала */
 } HeaterStatus_t;
 
 /* =========================================================================
@@ -74,6 +98,14 @@ HeaterStatus_t HEATER_GetStatusSolder(void);
  * @brief Статус нагревателя отсоса.
  */
 HeaterStatus_t HEATER_GetStatusDesolder(void);
+
+/**
+ * @brief Разрешена ли работа с каналом (RTD_OK): переключение фокуса
+ *        Tools, ПИД, таймеры сна. false — инструмент не подключен
+ *        или неисправен (RTD в коротком/обрыве).
+ * @param solder true — паяльник, false — отсос
+ */
+bool HEATER_IsToolOk(bool solder);
 
 /**
  * @brief Сброс таймера сна паяльника (вызывается из DOCK EXTI).

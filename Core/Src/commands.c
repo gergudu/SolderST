@@ -6,6 +6,7 @@
 #include "commands.h"
 #include "state.h"
 #include "config.h"
+#include "heater.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -276,7 +277,9 @@ void COMMANDS_HandleButtonEvent(ButtonEvent_t event) {
 /* ========================================================================== */
 
 void COMMANDS_ToggleTool(void) {
-    g_WorkFlags.tool = !g_WorkFlags.tool;
+    bool want_solder = !g_WorkFlags.tool;
+    if (!HEATER_IsToolOk(want_solder)) return; /* инструмент неисправен/не подключен */
+    g_WorkFlags.tool = want_solder;
     STATE_SetMode(g_WorkFlags.tool ? SYS_MODE_MAIN_SOLDER : SYS_MODE_MAIN_DESOLDER);
 }
 
