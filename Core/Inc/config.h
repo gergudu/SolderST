@@ -22,11 +22,14 @@ extern "C" {
    последнего изменения значения (дебаунс). */
 #define SAVE_DELAY_TICKS   200
 
-/* Время "вспышки" индикатора записи EEPROM в главном цикле (тик = 5 мс,
-   HAL_Delay(5)). Сам факт записи длится ~мс и не виден на экране,
-   поэтому индикатор удерживается включённым это время после успешной
-   записи, чтобы моргание было заметно глазом. 60 тиков = 300 мс. */
-#define EEPROM_FLASH_TICKS 60
+/* Длительность "вспышки" индикатора записи EEPROM в мс. Сам факт записи
+   длится ~мс и не виден на экране, поэтому индикатор удерживается
+   включённым это время после успешной записи. Считается по HAL_GetTick()
+   (реальное время), а не по числу итераций главного цикла — итерация
+   не всегда укладывается в номинальные 5 мс HAL_Delay(5), если в кадре
+   больше работы для дисплея, и счётчик тиков в такие моменты растягивал
+   вспышку сильно дольше задуманного. */
+#define EEPROM_FLASH_MS 150
 
 #define SET_MIN            50
 #define SET_MAX            450
@@ -160,10 +163,11 @@ extern SleepCounters_t g_SleepCounters;
 extern volatile DirtyFlags_t g_DirtyFlags;
 extern volatile uint16_t g_SaveDelayCounter;
 
-/* Счётчик "вспышки" индикатора записи EEPROM (см. EEPROM_FLASH_TICKS).
-   Выставляется в main.c сразу после успешной CONFIG_SaveToEEPROM(),
-   декрементируется в главном цикле. Индикатор в UI горит, пока > 0. */
-extern volatile uint16_t g_EepromFlashTicks;
+/* Момент (HAL_GetTick), до которого индикатор записи EEPROM должен
+   гореть в UI. Выставляется в main.c сразу после успешной
+   CONFIG_SaveToEEPROM() как HAL_GetTick() + EEPROM_FLASH_MS.
+   Индикатор в UI горит, пока HAL_GetTick() < это значение. */
+extern volatile uint32_t g_EepromFlashUntil;
 
 extern uint16_t g_tCurrentSolder;
 extern uint16_t g_tCurrentDesolder;

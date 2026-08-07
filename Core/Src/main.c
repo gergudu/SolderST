@@ -168,13 +168,14 @@ int main(void)
                подряд (по одному на проходку цикла) — не продлеваем
                вспышку на каждое из них, иначе индикатор "горит",
                пока не смоются все поля, вместо короткого моргания. */
-            if (CONFIG_SaveToEEPROM() && g_EepromFlashTicks == 0) {
-                g_EepromFlashTicks = EEPROM_FLASH_TICKS;
+            if (CONFIG_SaveToEEPROM()) {
+                uint32_t now = HAL_GetTick();
+                if ((int32_t)(g_EepromFlashUntil - now) <= 0) {
+                    g_EepromFlashUntil = now + EEPROM_FLASH_MS;
+                }
             }
         }
     }
-
-    if (g_EepromFlashTicks) g_EepromFlashTicks--;
 
     UI_UpdateLoop();
     HAL_Delay(5);

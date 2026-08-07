@@ -10,7 +10,7 @@ ServiceSettings_t g_ServiceSettings;
 SleepCounters_t g_SleepCounters;
 volatile DirtyFlags_t g_DirtyFlags;
 volatile uint16_t g_SaveDelayCounter = 0;
-volatile uint16_t g_EepromFlashTicks = 0;
+volatile uint32_t g_EepromFlashUntil = 0;
 uint16_t g_tCurrentSolder = 0;
 uint16_t g_tCurrentDesolder = 0;
 

@@ -8,6 +8,7 @@
 #include "config.h"
 #include "fonts.h"
 #include "display.h"
+#include "main.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -102,9 +103,9 @@ static void UI_DrawInfoZone(bool full_redraw) {
     /* Индикатор записи EEPROM: горит только в момент реальной отложенной
        записи (после того как истёк дебаунс g_SaveDelayCounter и
        CONFIG_SaveToEEPROM() реально что-то записала), с удержанием на
-       EEPROM_FLASH_TICKS — иначе сама запись длится доли миллисекунды
-       и физически не видна на экране. Выставляется в main.c. */
-    bool dot_on = (g_EepromFlashTicks > 0);
+       EEPROM_FLASH_MS реального времени — иначе сама запись длится доли
+       миллисекунды и физически не видна на экране. Выставляется в main.c. */
+    bool dot_on = ((int32_t)(g_EepromFlashUntil - HAL_GetTick()) > 0);
     if ((int8_t)dot_on != g_eepromDotPrev) {
         DISPLAY_FillCircle(UI_INFO_EEPROM_X, UI_INFO_EEPROM_Y, UI_INFO_EEPROM_R,
                             dot_on ? WHITE : BLACK);
