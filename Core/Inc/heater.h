@@ -44,23 +44,26 @@ typedef struct {
 } PID_t;
 
 /**
- * @brief Состояние RTD-датчика/подключения инструмента.
+ * @brief Состояние RTD-датчика/нагревателя/подключения инструмента.
  *
  * Определяется по комбинации показания ADS1220 (температура после
  * пересчёта, °C) и состояния Solder_Test/Desolder_Test (нагреватель
  * должен быть выключен в момент опроса Test — см. Channel_Tick_*):
  *
- *   Test = 0 (нагреватель разомкнут)  → RTD_NOT_CONNECTED, независимо
- *                                        от показаний ADS1220
- *   Test = 1, показание == 0 °C       → RTD_SHORT  (RTD в коротком)
- *   Test = 1, показание > 500 °C      → RTD_OPEN   (обрыв RTD)
- *   Test = 1, показание в норме       → RTD_OK
+ *   ADS > 500,        Test = 0  → RTD_NOT_CONNECTED       (инструмент не подключен)
+ *   ADS == 0,         Test = 0  → RTD_SHORT_HEATER_OPEN   (редко: КЗ RTD + обрыв нагревателя одновременно)
+ *   ADS == 0,         Test = 1  → RTD_SHORT               (RTD в коротком)
+ *   ADS > 500,        Test = 1  → RTD_OPEN                (обрыв RTD)
+ *   0 < ADS <= 500,   Test = 0  → HEATER_OPEN              (RTD исправен, оборван только нагреватель)
+ *   0 < ADS <= 500,   Test = 1  → RTD_OK
  */
 typedef enum {
     RTD_OK = 0,
     RTD_NOT_CONNECTED,
+    RTD_SHORT_HEATER_OPEN,
     RTD_SHORT,
     RTD_OPEN,
+    HEATER_OPEN,
 } RtdFault_t;
 
 typedef struct {

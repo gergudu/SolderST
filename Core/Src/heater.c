@@ -249,13 +249,19 @@ void HEATER_OnSleepTickDesolder(void) {
 #define RTD_FAULT_DEBOUNCE_TICKS  40u
 
 static RtdFault_t EvaluateRtdFault(uint16_t temp_c, bool heater_ok) {
+    bool zero     = (temp_c == 0);
+    bool too_high = (temp_c > RTD_FAULT_HIGH_C);
+
     if (!heater_ok) {
-        /* Test = 0: цепь нагревателя разомкнута — считаем, что
-           инструмент просто не подключен (не различаем показание ADS) */
-        return RTD_NOT_CONNECTED;
+        /* Test = 0: цепь нагревателя разомкнута */
+        if (too_high) return RTD_NOT_CONNECTED;      /* инструмент не подключен */
+        if (zero)     return RTD_SHORT_HEATER_OPEN;  /* редко: КЗ RTD + обрыв нагревателя */
+        return HEATER_OPEN;                          /* RTD в норме — оборван только нагреватель */
     }
-    if (temp_c == 0)                return RTD_SHORT;
-    if (temp_c > RTD_FAULT_HIGH_C)  return RTD_OPEN;
+
+    /* Test = 1: нагреватель цел, инструмент физически подключен */
+    if (zero)     return RTD_SHORT;
+    if (too_high) return RTD_OPEN;
     return RTD_OK;
 }
 

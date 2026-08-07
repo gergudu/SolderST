@@ -360,7 +360,9 @@ static void UI_DrawToolColumn(uint16_t x0, uint16_t w, bool is_solder,
     uint16_t sh = DISPLAY_GetHeight();
     bool active = (is_solder == active_tool_is_solder);
     bool ok     = (fault == RTD_OK);
-    bool faulty = (fault == RTD_SHORT || fault == RTD_OPEN);
+    /* "Неисправно" — любое состояние, кроме RTD_OK и "не подключен".
+       RTD_NOT_CONNECTED — единственный случай, когда просто пусто. */
+    bool faulty = !ok && (fault != RTD_NOT_CONNECTED);
 
     /* Неисправность/отключение — заголовок красным вне зависимости от
        того, активен ли сейчас этот инструмент. Иначе — обычная логика
