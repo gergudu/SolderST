@@ -155,10 +155,12 @@ int main(void)
     }
 
     /* Насос: PB13 = кнопка PB12 (удержание = работает)
-     * Передний фронт — сброс таймера сна отсоса */
+     * Передний фронт — сброс таймера сна отсоса.
+     * Если отсос выключен (pwrIsOnVac == false) — кнопка неактивна. */
     {
         static bool vac_prev = false;
-        bool vac = (HAL_GPIO_ReadPin(Btn_Pump_GPIO_Port, Btn_Pump_Pin) == GPIO_PIN_RESET);
+        bool vac_btn = (HAL_GPIO_ReadPin(Btn_Pump_GPIO_Port, Btn_Pump_Pin) == GPIO_PIN_RESET);
+        bool vac = vac_btn && g_WorkFlags.pwrIsOnVac;
         if (vac && !vac_prev) HEATER_ResetSleepDesolder();
         vac_prev = vac;
         HAL_GPIO_WritePin(Pump_On_GPIO_Port, Pump_On_Pin,

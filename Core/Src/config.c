@@ -90,12 +90,26 @@ static bool CONFIG_UpdateField(uint16_t offset, const void *data, uint16_t size)
    и для сброса настроек в Expert-меню — один и тот же путь кода. */
 static bool CONFIG_WriteWholeStructToEEPROM(void) {
     g_EEPROMConfig.crc16 = CONFIG_GetBufferCRC();
-    return EEPROM_I2C_Write(0, (uint8_t*)&g_EEPROMConfig, sizeof(EEPROM_Config_t));
+    if (!EEPROM_I2C_Write(0, (uint8_t*)&g_EEPROMConfig, sizeof(EEPROM_Config_t))) {
+        return false; /* g_EepromFault уже выставлен внутри EEPROM_I2C_Write */
+    }
+
+    /* Сверка чтением: на некоторых платах I2C-транзакция может формально
+       завершиться без ошибки (ACK) даже при физически отсутствующей
+       микросхеме (плавающая шина, наводки) — по одному коду возврата HAL
+       такое не поймать. Перечитываем и сравниваем байт в байт. */
+    EEPROM_Config_t verify;
+    if (!EEPROM_I2C_Read(0, (uint8_t*)&verify, sizeof(EEPROM_Config_t))
+        || memcmp(&verify, &g_EEPROMConfig, sizeof(EEPROM_Config_t)) != 0) {
+        g_EepromFault = true;
+        return false;
+    }
+    return true;
 }
 
 void CONFIG_Init(void) {
     __disable_irq();
-    g_WorkFlags.tool = true; g_WorkFlags.pwrIsOnSolder = true;
+    g_WorkFlags.tool = true;
     __enable_irq();
 
     if (!CONFIG_LoadFromEEPROM()) {
@@ -104,6 +118,12 @@ void CONFIG_Init(void) {
         memcpy(&g_TempSettings, &g_EEPROMConfig.tempSettings, sizeof(TempSettings_t));
         memcpy(&g_ServiceSettings, &g_EEPROMConfig.serviceSettings, sizeof(ServiceSettings_t));
     }
+
+    /* Статус вкл/выкл каждого инструмента — персистентный (FLAG_TOOL_EN_*),
+       по умолчанию (пустой/битый EEPROM) оба выключены. */
+    g_WorkFlags.pwrIsOnSolder = CONFIG_GetToolEnabledSolder();
+    g_WorkFlags.pwrIsOnVac    = CONFIG_GetToolEnabledDesolder();
+
     CONFIG_ValidateAll();
     g_DirtyFlags.all = 0;
 }
@@ -208,6 +228,19 @@ void CONFIG_SetBuzzerEnabled(bool en) {
     g_DirtyFlags.flags = 1;
     g_SaveDelayCounter = SAVE_DELAY_TICKS;  // Добавили таймер
 }
+
+void CONFIG_SetToolEnabledSolder(bool en) {
+    if (en) g_ServiceSettings.flags |= FLAG_TOOL_EN_SOLDER; else g_ServiceSettings.flags &= ~FLAG_TOOL_EN_SOLDER;
+    g_DirtyFlags.flags = 1;
+    g_SaveDelayCounter = SAVE_DELAY_TICKS;
+}
+void CONFIG_SetToolEnabledDesolder(bool en) {
+    if (en) g_ServiceSettings.flags |= FLAG_TOOL_EN_DESOLDER; else g_ServiceSettings.flags &= ~FLAG_TOOL_EN_DESOLDER;
+    g_DirtyFlags.flags = 1;
+    g_SaveDelayCounter = SAVE_DELAY_TICKS;
+}
+bool CONFIG_GetToolEnabledSolder(void)   { return (g_ServiceSettings.flags & FLAG_TOOL_EN_SOLDER)   != 0; }
+bool CONFIG_GetToolEnabledDesolder(void) { return (g_ServiceSettings.flags & FLAG_TOOL_EN_DESOLDER) != 0; }
 
 void CONFIG_ResetToDefaults(bool solder_tool) {
     if (solder_tool) {

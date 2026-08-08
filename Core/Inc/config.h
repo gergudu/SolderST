@@ -60,6 +60,11 @@ extern "C" {
 #define FLAG_SLEEP_SOLDER_EN  (1 << 0)
 #define FLAG_SLEEP_DESOLDER_EN   (1 << 1)
 #define FLAG_BZ_EN          (1 << 2)
+/* Статус "инструмент включен" — персистентный, как и остальные flags.
+   По умолчанию оба инструмента ВЫКЛЮЧЕНЫ (бит = 0), пока пользователь
+   явно не включит аккордом UP+DN. См. COMMANDS_TogglePower. */
+#define FLAG_TOOL_EN_SOLDER    (1 << 3)
+#define FLAG_TOOL_EN_DESOLDER  (1 << 4)
 
 #define CRC16_CCITT_POLY    0x1021
 #define CRC16_INIT_VALUE    0xFFFF
@@ -217,6 +222,14 @@ void CONFIG_SetKdDesolder(uint16_t val);
 void CONFIG_SetSleepEnabledSolder(bool en);
 void CONFIG_SetSleepEnabledDesolder(bool en);
 void CONFIG_SetBuzzerEnabled(bool en);
+
+/* Персистентный статус "инструмент включен" (см. FLAG_TOOL_EN_*).
+   Взводится/читается из COMMANDS_TogglePower (аккорд UP+DN) и при
+   старте — синхронизирует g_WorkFlags.pwrIsOnSolder/pwrIsOnVac. */
+void CONFIG_SetToolEnabledSolder(bool en);
+void CONFIG_SetToolEnabledDesolder(bool en);
+bool CONFIG_GetToolEnabledSolder(void);
+bool CONFIG_GetToolEnabledDesolder(void);
 
 /* Счётчики сна */
 void CONFIG_ActivateSleepCounterSolder(void);

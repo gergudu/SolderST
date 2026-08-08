@@ -286,12 +286,21 @@ void COMMANDS_ToggleTool(void) {
 void COMMANDS_TogglePower(void) {
     bool is_desolder = (STATE_GetMode() == SYS_MODE_MAIN_DESOLDER);
     volatile bool *pwr_flag = is_desolder ? &g_WorkFlags.pwrIsOnVac : &g_WorkFlags.pwrIsOnSolder;
-    *pwr_flag = !(*pwr_flag);
-    if (is_desolder) {
-        *pwr_flag ? STATE_ActivateSleepDesolder() : STATE_DeactivateSleepDesolder();
+    bool turning_on = !(*pwr_flag);
+
+    if (turning_on && !HEATER_IsToolOk(!is_desolder)) return; /* неисправен/не подключен */
+
+    if (turning_on) {
+        /* Полный сброс: активный режим, сброс ПИД и ВСЕХ таймеров сна —
+           тот же путь, что и при пробуждении из докстанции. */
+        is_desolder ? HEATER_ResetSleepDesolder() : HEATER_ResetSleepSolder();
     } else {
-        *pwr_flag ? STATE_ActivateSleepSolder() : STATE_DeactivateSleepSolder();
+        *pwr_flag = false;
+        is_desolder ? STATE_DeactivateSleepDesolder() : STATE_DeactivateSleepSolder();
     }
+
+    /* Персистентность статуса вкл/выкл — как и SET*, переживает перезагрузку */
+    is_desolder ? CONFIG_SetToolEnabledDesolder(*pwr_flag) : CONFIG_SetToolEnabledSolder(*pwr_flag);
 }
 
 void COMMANDS_ToggleServiceMode(void) {
