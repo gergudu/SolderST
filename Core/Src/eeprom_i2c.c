@@ -207,6 +207,11 @@ bool EEPROM_I2C_Write(uint16_t address, uint8_t *data, uint16_t size)
     return ok;
 }
 
+/* Сырой код возврата последнего HAL_I2C_IsDeviceReady — временная
+   диагностика, см. UI_DrawInfoZone. 0=HAL_OK, 1=HAL_ERROR, 2=HAL_BUSY,
+   3=HAL_TIMEOUT (см. enum HAL_StatusTypeDef). */
+volatile uint8_t g_EepromDebugHalStatus = 99;
+
 /**
  * @brief Прямая проверка присутствия микросхемы на шине (ACK на адрес,
  *        HAL_I2C_IsDeviceReady) — без чтения/записи каких-либо данных
@@ -218,7 +223,13 @@ bool EEPROM_I2C_Write(uint16_t address, uint8_t *data, uint16_t size)
  */
 bool EEPROM_I2C_IsPresent(void)
 {
-    bool ok = (EEPROM_I2C_WaitReady() == EEPROM_OK);
+    /* Временно: вызываем HAL напрямую и сохраняем сырой код возврата
+       для отображения на экране — чтобы увидеть, что реально происходит
+       на шине, а не полагаться на уже готовую обёртку. */
+    HAL_StatusTypeDef st = HAL_I2C_IsDeviceReady(&hi2c1, EEPROM_I2C_ADDRESS, 3, 100);
+    g_EepromDebugHalStatus = (uint8_t)st;
+
+    bool ok = (st == HAL_OK);
     if (!ok) g_EepromFault = true;
     return ok;
 }

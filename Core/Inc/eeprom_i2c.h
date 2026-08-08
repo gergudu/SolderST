@@ -72,4 +72,9 @@ bool EEPROM_I2C_Write(uint16_t address, uint8_t *data, uint16_t size);
    данных) — см. eeprom_i2c.c. Вызывается один раз в CONFIG_Init(). */
 bool EEPROM_I2C_IsPresent(void);
 
+/* Сырой код возврата HAL_I2C_IsDeviceReady из EEPROM_I2C_IsPresent —
+   временная диагностика. 0=HAL_OK 1=HAL_ERROR 2=HAL_BUSY 3=HAL_TIMEOUT
+   99=ещё не проверялось. */
+extern volatile uint8_t g_EepromDebugHalStatus;
+
 #endif /* EEPROM_I2C_H */

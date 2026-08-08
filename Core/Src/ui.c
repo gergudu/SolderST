@@ -100,6 +100,10 @@ static void UI_DrawInfoZone(bool full_redraw) {
         DISPLAY_FillRect(0, 0, sw, UI_INFO_ZONE_H, BLACK);
         DISPLAY_FillRect(0, UI_INFO_ZONE_H - 1, sw, 1, GRAY);
         g_eepromDotPrev = -1; /* форсируем перерисовку индикатора ниже */
+        DISPLAY_ClearSlot(90); /* иначе после повторного full_redraw с тем же
+                                   текстом SmartPrint решит, что рисовать не
+                                   надо, хотя пиксели уже стёрты выше */
+        DISPLAY_ClearSlot(91);
     }
 
     /* Индикатор записи EEPROM: горит только в момент реальной отложенной
@@ -112,6 +116,17 @@ static void UI_DrawInfoZone(bool full_redraw) {
         DISPLAY_FillCircle(UI_INFO_EEPROM_X, UI_INFO_EEPROM_Y, UI_INFO_EEPROM_R,
                             dot_on ? WHITE : BLACK);
         g_eepromDotPrev = dot_on;
+    }
+
+    /* ВРЕМЕННО (диагностика): сырой код HAL_I2C_IsDeviceReady из проверки
+       присутствия EEPROM при старте. Показывается всегда, а не только
+       при неисправности — чтобы увидеть, что реально возвращает HAL,
+       даже если g_EepromFault почему-то не взводится.
+       0=HAL_OK 1=HAL_ERROR 2=HAL_BUSY 3=HAL_TIMEOUT 99=ещё не было. */
+    {
+        char dbg[16];
+        snprintf(dbg, sizeof(dbg), "hal=%u", g_EepromDebugHalStatus);
+        DISPLAY_SmartPrint(91, sw - 70, 6, dbg, YELLOW, BLACK, &UI_HEADER_FONT);
     }
 
     /* Неисправность EEPROM — залипающая до перезагрузки (см. eeprom_i2c.c),
