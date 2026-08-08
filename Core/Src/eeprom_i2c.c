@@ -206,3 +206,19 @@ bool EEPROM_I2C_Write(uint16_t address, uint8_t *data, uint16_t size)
     if (!ok) g_EepromFault = true;
     return ok;
 }
+
+/**
+ * @brief Прямая проверка присутствия микросхемы на шине (ACK на адрес,
+ *        HAL_I2C_IsDeviceReady) — без чтения/записи каких-либо данных
+ *        и без интерпретации их содержимого (magic/CRC). Самый прямой
+ *        из возможных способов детектировать физическое отсутствие
+ *        EEPROM. При неудаче сразу взводит g_EepromFault.
+ * @retval true  — устройство ответило на шине
+ * @retval false — устройство не отвечает (не подключено/неисправно)
+ */
+bool EEPROM_I2C_IsPresent(void)
+{
+    bool ok = (EEPROM_I2C_WaitReady() == EEPROM_OK);
+    if (!ok) g_EepromFault = true;
+    return ok;
+}

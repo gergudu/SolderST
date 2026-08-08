@@ -68,4 +68,8 @@ bool EEPROM_I2C_Read(uint16_t address, uint8_t *data, uint16_t size);
  */
 bool EEPROM_I2C_Write(uint16_t address, uint8_t *data, uint16_t size);
 
+/* Прямая проверка присутствия микросхемы на шине (без чтения/записи
+   данных) — см. eeprom_i2c.c. Вызывается один раз в CONFIG_Init(). */
+bool EEPROM_I2C_IsPresent(void);
+
 #endif /* EEPROM_I2C_H */

@@ -112,6 +112,11 @@ void CONFIG_Init(void) {
     g_WorkFlags.tool = true;
     __enable_irq();
 
+    /* Прямая проверка присутствия микросхемы на шине — до какой-либо
+       попытки прочитать/интерпретировать данные. Самый надёжный способ
+       поймать физическое отсутствие EEPROM сразу при старте. */
+    EEPROM_I2C_IsPresent();
+
     if (!CONFIG_LoadFromEEPROM()) {
         g_EEPROMConfig = CONFIG_EEPROMDefaults;
         CONFIG_WriteWholeStructToEEPROM();
