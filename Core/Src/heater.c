@@ -57,7 +57,7 @@ typedef struct {
  * ========================================================================= */
 
 static HeaterChannel_t s_solder;
-static HeaterChannel_t s_desolder;  /* ПИД/нагрев отсоса пока не реализован — см. Channel_Tick_Desolder */
+static HeaterChannel_t s_desolder;
 
 /* =========================================================================
  * Публичные функции
@@ -164,13 +164,18 @@ static inline bool VacBtn_Pressed(void) {
 /**
  * @brief Целевая температура с учётом состояния сна.
  */
-static float GetTargetSolder(void) {
+/**
+ * @brief Целевая температура с учётом состояния сна.
+ *        Публичная — единая точка истины для "эффективной" уставки
+ *        (см. пояснение в heater.h и config.h).
+ */
+float HEATER_GetEffectiveTargetSolder(void) {
     if (s_solder.sleep_state == SLEEP_STATE_PRESLEEP)
         return (float)g_ServiceSettings.sleepTempSolder;
     return (float)g_TempSettings.targetSetSolder;
 }
 
-static float __attribute__((unused)) GetTargetDesolder(void) {
+float HEATER_GetEffectiveTargetDesolder(void) {
     if (s_desolder.sleep_state == SLEEP_STATE_PRESLEEP)
         return (float)g_ServiceSettings.sleepTempDesolder;
     return (float)g_TempSettings.targetSetDesolder;
@@ -301,7 +306,7 @@ static void Channel_Tick_Solder(void) {
         s_solder.pid_counter = 0;
 
         if (enabled) {
-            float target  = GetTargetSolder();
+            float target  = HEATER_GetEffectiveTargetSolder();
             float current = (float)g_tCurrentSolder;
             float out = PID_Compute(&s_solder.pid, target, current);
             s_solder.duty_ticks = (uint32_t)(out * (float)PWM_PERIOD_TICKS);
@@ -342,14 +347,57 @@ static void Channel_Tick_Solder(void) {
 }
 
 static void Channel_Tick_Desolder(void) {
-    /* ПИД/нагрев отсоса пока не реализован — ключ всегда выключен.
-       Диагностика RTD/подключения при этом уже полноценно рабочая,
-       т.к. чтение ADS1220 для отсоса реализовано. */
-    Desolder_SetPin(false);
-    s_desolder.status.heater_ok = Desolder_TestPin();
-    s_desolder.status.duty = 0.0f;
+    bool enabled = g_WorkFlags.pwrIsOnVac;
 
+    /* --- Обновление коэффициентов ПИД из конфига --- */
+    PID_UpdateCoeffs(&s_desolder.pid,
+        g_ServiceSettings.KpDesolder / 100.0f,
+        g_ServiceSettings.KiDesolder / 100.0f,
+        g_ServiceSettings.KdDesolder / 100.0f);
+
+    /* --- ПИД пересчёт каждые PID_PERIOD_TICKS --- */
+    s_desolder.pid_counter++;
+    if (s_desolder.pid_counter >= PID_PERIOD_TICKS) {
+        s_desolder.pid_counter = 0;
+
+        if (enabled) {
+            float target  = HEATER_GetEffectiveTargetDesolder();
+            float current = (float)g_tCurrentDesolder;
+            float out = PID_Compute(&s_desolder.pid, target, current);
+            s_desolder.duty_ticks = (uint32_t)(out * (float)PWM_PERIOD_TICKS);
+        } else {
+            s_desolder.duty_ticks = 0;
+        }
+    }
+
+    /* --- Программный ШИМ --- */
+    s_desolder.pwm_counter++;
+    if (s_desolder.pwm_counter >= PWM_PERIOD_TICKS) {
+        s_desolder.pwm_counter = 0;
+    }
+
+    bool pwm_on = (s_desolder.pwm_counter < s_desolder.duty_ticks);
+
+    /* --- Контроль целостности нагревателя (пока ключ закрыт) --- */
+    if (!pwm_on) {
+        s_desolder.status.heater_ok = Desolder_TestPin();
+    }
+
+    /* --- Диагностика RTD/подключения (ADS1220 + Test) --- */
     UpdateRtdFault(&s_desolder, g_tCurrentDesolder, s_desolder.status.heater_ok);
+
+    /* --- Управление ключом ---
+       Тот же гейтинг по status.is_ok, что и у паяльника: при обрыве/КЗ
+       RTD ПИД не должен слепо греть по заведомо неверной температуре. */
+    bool drive = enabled && pwm_on && s_desolder.status.is_ok;
+    Desolder_SetPin(drive);
+    if (!s_desolder.status.is_ok) {
+        PID_Reset(&s_desolder.pid);
+    }
+
+    /* --- Статус --- */
+    s_desolder.status.in_presleep = (s_desolder.sleep_state == SLEEP_STATE_PRESLEEP);
+    s_desolder.status.duty = (float)s_desolder.duty_ticks / (float)PWM_PERIOD_TICKS;
 }
 
 /* =========================================================================
@@ -400,6 +448,21 @@ HeaterStatus_t HEATER_GetStatusDesolder(void) {
 
 bool HEATER_IsToolOk(bool solder) {
     return solder ? s_solder.status.is_ok : s_desolder.status.is_ok;
+}
+
+/**
+ * @brief Тик насоса — единственная точка управления PB13/PB12
+ *        (раньше дублировалась инлайном в main.c). Если отсос выключен
+ *        (pwrIsOnVac == false) — кнопка неактивна.
+ */
+void HEATER_PumpTick(void) {
+    static bool vac_prev = false;
+    bool vac = VacBtn_Pressed() && g_WorkFlags.pwrIsOnVac;
+    if (vac && !vac_prev) {
+        HEATER_ResetSleepDesolder();
+    }
+    vac_prev = vac;
+    Pump_SetPin(vac);
 }
 
 void HEATER_ResetSleepSolder(void) {

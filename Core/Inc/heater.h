@@ -111,6 +111,23 @@ HeaterStatus_t HEATER_GetStatusDesolder(void);
 bool HEATER_IsToolOk(bool solder);
 
 /**
+ * @brief Эффективная целевая температура — с учётом текущей ступени
+ *        сна (полусон → sleepTemp вместо targetSet). Единая точка
+ *        истины: только heater.c владеет автоматом сна, поэтому
+ *        только здесь эту величину можно посчитать корректно.
+ */
+float HEATER_GetEffectiveTargetSolder(void);
+float HEATER_GetEffectiveTargetDesolder(void);
+
+/**
+ * @brief Тик насоса — читает кнопку BTN_VAC, управляет реле насоса,
+ *        сбрасывает таймер сна отсоса по переднему фронту. Вызывается
+ *        из главного цикла main.c (не из ISR HEATER_Tick, чтобы не
+ *        завязывать опрос кнопки на частоту TIM3).
+ */
+void HEATER_PumpTick(void);
+
+/**
  * @brief Сброс таймера сна паяльника (вызывается из DOCK EXTI).
  */
 void HEATER_ResetSleepSolder(void);

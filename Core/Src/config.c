@@ -304,8 +304,9 @@ uint16_t CONFIG_GetPresetDesolder(uint8_t num) {
     if (num == 3) return g_TempSettings.preSet3Desolder;
     return g_TempSettings.preSet1Desolder;
 }
-uint16_t CONFIG_GetEffectiveTargetSolder(void) { return g_TempSettings.targetSetSolder; }
-uint16_t CONFIG_GetEffectiveTargetDesolder(void)  { return g_TempSettings.targetSetDesolder; }
+/* CONFIG_GetEffectiveTargetSolder/Desolder удалены — см. пояснение
+   в config.h. Правильная версия — HEATER_GetEffectiveTargetSolder/Desolder
+   в heater.c. */
 
 void CONFIG_DecrementSleepCounters(void) {
     if (g_SleepCounters.activeSolder && g_SleepCounters.counterSolder > 0) {

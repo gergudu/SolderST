@@ -198,8 +198,12 @@ uint16_t CONFIG_GetPresetDesolder(uint8_t num);
 /* Целевые температуры */
 void CONFIG_SetTargetSolder(uint16_t val);
 void CONFIG_SetTargetDesolder(uint16_t val);
-uint16_t CONFIG_GetEffectiveTargetSolder(void);
-uint16_t CONFIG_GetEffectiveTargetDesolder(void);
+/* "Эффективная" (с учётом сна) целевая температура — config.c не
+   владеет состоянием автомата сна, поэтому не может её посчитать
+   верно (раньше здесь были функции с таким именем, но они просто
+   возвращали сырой targetSet*, что не соответствовало названию).
+   Единая точка истины — HEATER_GetEffectiveTargetSolder()/
+   HEATER_GetEffectiveTargetDesolder() в heater.h. */
 
 /* Сервисные настройки */
 void CONFIG_SetSleepTempSolder(uint16_t val);

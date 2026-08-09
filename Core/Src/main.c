@@ -154,18 +154,9 @@ int main(void)
         }
     }
 
-    /* Насос: PB13 = кнопка PB12 (удержание = работает)
-     * Передний фронт — сброс таймера сна отсоса.
-     * Если отсос выключен (pwrIsOnVac == false) — кнопка неактивна. */
-    {
-        static bool vac_prev = false;
-        bool vac_btn = (HAL_GPIO_ReadPin(Btn_Pump_GPIO_Port, Btn_Pump_Pin) == GPIO_PIN_RESET);
-        bool vac = vac_btn && g_WorkFlags.pwrIsOnVac;
-        if (vac && !vac_prev) HEATER_ResetSleepDesolder();
-        vac_prev = vac;
-        HAL_GPIO_WritePin(Pump_On_GPIO_Port, Pump_On_Pin,
-                          vac ? GPIO_PIN_SET : GPIO_PIN_RESET);
-    }
+    /* Насос — единая реализация в heater.c (HEATER_PumpTick),
+       раньше была продублирована здесь инлайном */
+    HEATER_PumpTick();
 
     /* Индикатор записи EEPROM (см. UI_DrawInfoZone в ui.c) взводится
        ниже, в момент реальной отложенной записи — не раньше */

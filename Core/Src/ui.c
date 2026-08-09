@@ -463,13 +463,13 @@ static void UI_DrawSharedPresetRow(bool active_is_solder) {
     uint16_t sw = DISPLAY_GetWidth();
     uint16_t sh = DISPLAY_GetHeight();
 
-    uint16_t *p = active_is_solder ? &g_TempSettings.preSet1Solder
-                                    : &g_TempSettings.preSet1Desolder;
     uint16_t py   = (sh > 35) ? (sh - 35) : UI_MENU_START_Y;
     uint16_t colW = sw / 3;
 
     for (int j = 0; j < 3; j++) {
-        snprintf(buf, sizeof(buf), "%u", *(p + j));
+        uint16_t val = active_is_solder ? CONFIG_GetPresetSolder(j + 1)
+                                         : CONFIG_GetPresetDesolder(j + 1);
+        snprintf(buf, sizeof(buf), "%u", val);
         uint16_t pw = DISPLAY_GetTextWidth(buf, &AntiquaB_24_uni);
         uint16_t px = j * colW + (colW > pw ? (colW - pw) / 2 : 0);
         DISPLAY_SmartPrint(16 + j, px, py, buf, WHITE, BLACK, &AntiquaB_24_uni);
