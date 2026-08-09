@@ -259,7 +259,7 @@ uint16_t STATE_GetItemValue(uint8_t idx) {
     return g_WorkFlags.tool ? *g_ServiceMenu[idx].valueSolder
                             : *g_ServiceMenu[idx].valueDesolder;
 }
-/* Пункты-действия ("Выход", "Expert") не имеют value*/setter* — раньше это
+/* Пункты-действия ("Выход", "Expert") не имеют value/setter — раньше это
    проверялось хрупким сравнением строк в ui.c, синхронизированным с
    лейблом только "на глаз". Теперь — через саму модель данных, как уже
    сделано для Expert-меню через is_action. */
