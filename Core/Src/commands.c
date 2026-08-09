@@ -95,6 +95,25 @@ static void ChangeValue(int8_t dir, bool use_accel) {
 
     int32_t newVal = (int32_t)(*ctx.p_val) + delta;
 
+    /* При ускорении (шаг 5 или 10, см. CalculateStep) не просто прибавляем
+       шаг от текущего значения, а "перепрыгиваем" на ближайшее круглое
+       число, кратное этому шагу, в направлении движения — иначе на
+       практике получаются некруглые значения вроде 173→178→183 вместо
+       ожидаемого 173→175→180. Не применяем к таймерам — они в тиках
+       (1 мин = 2 тика), округление до 5/10 тиков даёт некруглые минуты. */
+    if (use_accel && !is_timer) {
+        int16_t roundStep = (delta < 0) ? -delta : delta;
+        if (roundStep >= 5) {
+            int32_t cur = (int32_t)(*ctx.p_val);
+            if (dir > 0) {
+                newVal = ((cur / roundStep) + 1) * roundStep;
+            } else {
+                newVal = (cur % roundStep == 0) ? (cur - roundStep)
+                                                 : ((cur / roundStep) * roundStep);
+            }
+        }
+    }
+
     // Ограничения
     if (newVal < ctx.min) newVal = ctx.min;
     if (newVal > ctx.max) newVal = ctx.max;

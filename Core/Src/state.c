@@ -108,6 +108,21 @@ void STATE_ExpertMenuNavigateAccel(int16_t delta) {
 
     uint16_t cur = g_WorkFlags.tool ? *item->valueSolder : *item->valueDesolder;
     int32_t  nv  = (int32_t)cur + delta;
+
+    /* При ускорении (|delta| == 5 или 10, см. CalculateStep в commands.c)
+       не просто прибавляем шаг, а "перепрыгиваем" на ближайшее круглое
+       число, кратное этому шагу, в направлении движения — тот же приём,
+       что и в ChangeValue() (commands.c) для главного экрана/Service. */
+    int16_t roundStep = (delta < 0) ? -delta : delta;
+    if (roundStep >= 5) {
+        if (delta > 0) {
+            nv = ((int32_t)cur / roundStep + 1) * roundStep;
+        } else {
+            nv = (cur % roundStep == 0) ? ((int32_t)cur - roundStep)
+                                         : (((int32_t)cur / roundStep) * roundStep);
+        }
+    }
+
     if (nv < item->min) nv = item->min;
     if (nv > item->max) nv = item->max;
     if (cur != (uint16_t)nv) setter((uint16_t)nv);
