@@ -74,7 +74,12 @@ typedef struct {
 	uint16_t stable_mask;
 	uint16_t buttons_tick;
 	uint16_t chord_window;
-	uint16_t repeat_counter;
+	uint16_t repeat_counter; /* buttons_tick последнего сработавшего REPEAT —
+	                             НЕ счётчик вызовов BUTTONS_Process(). Та
+	                             вызывается из главного цикла и может идти
+	                             медленнее ISR TIM5 (см. buttons.c), поэтому
+	                             сравниваем с точным ISR-тиком buttons_tick,
+	                             а не считаем сами вызовы. */
 	uint16_t repeat_iteration;
 	bool long_press_fired;
 	bool chord_long_fired;

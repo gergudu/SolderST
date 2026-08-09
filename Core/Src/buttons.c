@@ -71,12 +71,12 @@ static ButtonEvent_t HandleSinglePress(bool any_pressed) {
     if (!g_ButtonContext.long_press_fired) {
         if (g_ButtonContext.buttons_tick >= LONG_PRESS_TICKS) {
             g_ButtonContext.long_press_fired = true;
-            g_ButtonContext.repeat_counter = 0;
+            g_ButtonContext.repeat_counter = g_ButtonContext.buttons_tick;
             return MapToEvent(g_ButtonContext.pressed_button, true);
         }
     } else if (g_ButtonContext.pressed_button == BTN_UP || g_ButtonContext.pressed_button == BTN_DN) {
-        if (++g_ButtonContext.repeat_counter >= REPEAT_INTERVAL_TICKS) {
-            g_ButtonContext.repeat_counter = 0;
+        if ((uint16_t)(g_ButtonContext.buttons_tick - g_ButtonContext.repeat_counter) >= REPEAT_INTERVAL_TICKS) {
+            g_ButtonContext.repeat_counter = g_ButtonContext.buttons_tick;
             return (g_ButtonContext.pressed_button == BTN_UP) ? BTN_EVENT_UP_REPEAT : BTN_EVENT_DN_REPEAT;
         }
     }
@@ -98,7 +98,7 @@ static ButtonEvent_t HandleChordWait(bool any_pressed, uint16_t gpio) {
         g_ButtonContext.state = BTN_STATE_SINGLE_PRESSED;
         g_ButtonContext.pressed_button = g_ButtonContext.first_chord_btn;
         g_ButtonContext.long_press_fired = true;
-        g_ButtonContext.repeat_counter = 0;
+        g_ButtonContext.repeat_counter = g_ButtonContext.buttons_tick;
         return (g_ButtonContext.pressed_button == BTN_UP) ? BTN_EVENT_UP_REPEAT : BTN_EVENT_DN_REPEAT;
     }
     return BTN_EVENT_NONE;
