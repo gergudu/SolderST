@@ -15,7 +15,12 @@ typedef struct {
     bool active;
 } TextSlot_t;
 
-static TextSlot_t g_slots[64];
+/* Было 64 — слоты инфозоны (90, 91: "Err EEPROM", диагностика hal=N)
+   оказались за пределами массива и молча игнорировались и
+   SmartPrint, и ClearSlot. Индикатор реальной аппаратной
+   неисправности EEPROM физически никогда не отрисовывался. Запас
+   до 100 — с учётом будущих иконок таймеров сна в инфозоне. */
+static TextSlot_t g_slots[100];
 
 /* Буфер для одной линии текста (ширина дисплея) */
 static uint16_t scanline[ST7789_WIDTH];
@@ -158,7 +163,7 @@ void DISPLAY_ClearAllSlots(void) {
 }
 
 void DISPLAY_ClearSlot(uint8_t slot) {
-    if (slot < 64) memset(&g_slots[slot], 0, sizeof(TextSlot_t));
+    if (slot < 100) memset(&g_slots[slot], 0, sizeof(TextSlot_t));
 }
 
 uint16_t DISPLAY_GetTextWidth(const char* str, const font_t* font) {
@@ -174,7 +179,7 @@ uint16_t DISPLAY_GetTextWidth(const char* str, const font_t* font) {
 }
 
 void DISPLAY_SmartPrint(uint8_t slot, uint16_t x, uint16_t y, const char* str, uint16_t color, uint16_t bgcolor, const font_t* font) {
-    if (slot >= 64) return;
+    if (slot >= 100) return;
 
     // Если текст в слоте не изменился — выходим
     if (g_slots[slot].active && strcmp(g_slots[slot].text, str) == 0) return;

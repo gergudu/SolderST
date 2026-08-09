@@ -95,6 +95,7 @@ uint8_t     STATE_GetMenuTotalItems(void);
 uint8_t     STATE_GetMenuVisibleRows(void);
 const char* STATE_GetItemLabel(uint8_t idx);
 uint16_t    STATE_GetItemValue(uint8_t idx);
+bool        STATE_IsServiceItemAction(uint8_t idx);
 const ServiceMenuItem_t* STATE_GetServiceMenuItem(uint8_t idx);
 bool STATE_IsExpertWarn(void);
 

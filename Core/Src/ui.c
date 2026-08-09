@@ -17,7 +17,6 @@
 /* Внешние переменные температур и состояния */
 extern uint16_t g_tCurrentSolder;
 extern uint16_t g_tCurrentDesolder;
-extern bool g_UI_NeedsClear;
 
 /* Настройки интерфейса — вычисляются из размеров дисплея при первом вызове */
 #define UI_MARGIN_LEFT     10
@@ -193,7 +192,11 @@ void UI_DrawExpertMenu(void) {
     if (cursor >= expert_top + visible) expert_top = cursor - visible + 1;
     bool scrolled = (expert_top != prevTop);
 
-    bool full_redraw  = STATE_CheckAndResetDirty() || g_forceFullRedraw || scrolled;
+    /* STATE_CheckAndResetDirty() уже вызван и потреблён в UI_UpdateLoop()
+       до диспетчеризации сюда — здесь он всегда вернул бы false.
+       g_forceFullRedraw несёт тот же сигнал (выставляется UI_UpdateLoop
+       при смене режима). Раньше тут был повторный вызов — мёртвый код. */
+    bool full_redraw  = g_forceFullRedraw || scrolled;
     bool cursor_moved = (cursor != last_expert_cursor);
     bool edit_changed = (isEditing != exp_was_editing);
 
@@ -297,7 +300,13 @@ void UI_DrawServiceMenu(void) {
     if (cursor >= svc_top + visible) svc_top = cursor - visible + 1;
     bool scrolled = (svc_top != prevTop);
 
-    bool full_redraw  = (g_UI_NeedsClear || g_forceFullRedraw || scrolled);
+    /* g_UI_NeedsClear уже потреблён и сброшен в UI_UpdateLoop() до
+       диспетчеризации сюда — здесь он всегда false. g_forceFullRedraw
+       несёт тот же сигнал. Раньше тут читался тот же флаг напрямую —
+       мёртвая проверка, разошедшаяся с UI_DrawExpertMenu (там был
+       повторный вызов STATE_CheckAndResetDirty() — тоже мёртвый,
+       см. правку там же). */
+    bool full_redraw  = (g_forceFullRedraw || scrolled);
     bool cursor_moved = (cursor != svc_prev);
     bool edit_changed = (isEditing != svc_was_editing);
 
@@ -310,7 +319,6 @@ void UI_DrawServiceMenu(void) {
     if (full_redraw) {
         DISPLAY_FillRect(0, UI_MENU_START_Y, sw, sh - UI_MENU_START_Y, BLACK);
         DISPLAY_ClearAllSlots();
-        g_UI_NeedsClear   = false;
         g_forceFullRedraw = false;
         svc_prev          = 255;
         svc_rendered      = false;
@@ -340,8 +348,7 @@ void UI_DrawServiceMenu(void) {
                            STATE_GetItemLabel(i), txtColor, bgColor, &AntiquaB_24_uni);
 
         /* Значение */
-        const char *lbl = STATE_GetItemLabel(i);
-        if (strcmp(lbl, "Выход") == 0 || strcmp(lbl, "Expert") == 0) continue;
+        if (STATE_IsServiceItemAction(i)) continue;
 
         FormatMenuValue(buf, sizeof(buf), i, isSelected, isEditing);
         uint16_t x_val = sw - 15 - DISPLAY_GetTextWidth(buf, &AntiquaB_24_uni);

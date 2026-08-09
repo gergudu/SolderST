@@ -197,6 +197,7 @@ void STATE_ResetMenu(void) {
     g_MenuCursor = 0;
     g_MenuTop = 0;
     g_IsEditing = false;
+    g_ServiceExpertWarn = false;
 }
 
 void STATE_MenuNavigate(int8_t dir) {
@@ -254,9 +255,16 @@ uint8_t     STATE_GetMenuTotalItems(void)    { return MENU_TOTAL_ITEMS; }
 uint8_t     STATE_GetMenuVisibleRows(void)   { return MENU_VISIBLE_ROWS; }
 const char* STATE_GetItemLabel(uint8_t idx)  { return (idx < MENU_TOTAL_ITEMS) ? g_ServiceMenu[idx].label : ""; }
 uint16_t STATE_GetItemValue(uint8_t idx) {
-    if (idx >= MENU_TOTAL_ITEMS) return 0;
+    if (idx >= MENU_TOTAL_ITEMS || g_ServiceMenu[idx].valueSolder == NULL) return 0;
     return g_WorkFlags.tool ? *g_ServiceMenu[idx].valueSolder
                             : *g_ServiceMenu[idx].valueDesolder;
+}
+/* Пункты-действия ("Выход", "Expert") не имеют value*/setter* — раньше это
+   проверялось хрупким сравнением строк в ui.c, синхронизированным с
+   лейблом только "на глаз". Теперь — через саму модель данных, как уже
+   сделано для Expert-меню через is_action. */
+bool STATE_IsServiceItemAction(uint8_t idx) {
+    return (idx < MENU_TOTAL_ITEMS) && (g_ServiceMenu[idx].valueSolder == NULL);
 }
 const ServiceMenuItem_t* STATE_GetServiceMenuItem(uint8_t idx) {
     if (idx >= MENU_TOTAL_ITEMS) return NULL;
