@@ -493,18 +493,6 @@ void UI_DrawMainScreen(void) {
     bool solderEnabled   = g_WorkFlags.pwrIsOnSolder;
     bool desolderEnabled = g_WorkFlags.pwrIsOnVac;
 
-    /* Разделительные линии перерисовываем только при входе на экран
-       (полная перерисовка), не каждый кадр. Горизонтальная линия под
-       инфозоной уже рисуется в UI_DrawInfoZone(). Вертикальная линия
-       между окнами не должна заходить в инфозону (сверху) и в общую
-       строку пресетов SET1-3 (снизу) — она их не разделяет. */
-    if (g_forceFullRedraw) {
-        uint16_t presetY = (sh > 35) ? (sh - 35) : UI_MENU_START_Y;
-        uint16_t vTop    = UI_INFO_ZONE_H;
-        uint16_t vBottom = (presetY > vTop + 6) ? (presetY - 6) : vTop;
-        DISPLAY_FillRect(half - 1, vTop, 2, vBottom - vTop, GRAY);
-    }
-
     /* Полная перерисовка обеих колонок нужна при: смене активного
        инструмента (перекраска active/inactive), смене состояния
        неисправности или вкл/выкл любого из инструментов (тип
@@ -515,6 +503,23 @@ void UI_DrawMainScreen(void) {
     bool fault_changed   = (solderFault != solderFaultPrev) || (desolderFault != desolderFaultPrev);
     bool enabled_changed = (solderEnabled != solderEnabledPrev) || (desolderEnabled != desolderEnabledPrev);
     bool need_reset = tool_now != tool_prev || g_forceFullRedraw || fault_changed || enabled_changed;
+
+    /* Разделительные линии. Горизонтальная под инфозоной уже рисуется в
+       UI_DrawInfoZone(). Вертикальная — между окнами, не заходит в
+       инфозону (сверху) и в общую строку пресетов SET1-3 (снизу).
+       ВАЖНО: перерисовываем её при ЛЮБОМ need_reset, а не только при
+       полной перерисовке экрана — иначе FillRect(BLACK) правой колонки
+       в UI_DrawToolColumn (она начинается ровно с x=half, а полоса
+       шириной 2px занимает [half-1, half+1)) стирает половину полосы
+       по высоте колонки, а перерисовать её было уже некому — отсюда
+       был разрыв в полосе при любой смене статуса неисправности/вкл-выкл. */
+    if (need_reset) {
+        uint16_t presetY = (sh > 35) ? (sh - 35) : UI_MENU_START_Y;
+        uint16_t vTop    = UI_INFO_ZONE_H;
+        uint16_t vBottom = (presetY > vTop + 6) ? (presetY - 6) : vTop;
+        DISPLAY_FillRect(half - 1, vTop, 2, vBottom - vTop, GRAY);
+    }
+
     if (need_reset) {
         for (uint8_t s = 10; s <= 15; s++) DISPLAY_ClearSlot(s);
         for (uint8_t s = 60; s <= 65; s++) DISPLAY_ClearSlot(s);
