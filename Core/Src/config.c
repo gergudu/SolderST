@@ -289,9 +289,53 @@ void CONFIG_ResetToDefaults(bool solder_tool) {
 }
 
 void CONFIG_ValidateAll(void) {
-    g_TempSettings.preSet1Solder = CONFIG_Clamp(g_TempSettings.preSet1Solder, SET_MIN, SET_MAX);
+    /* Раньше проверялись только preSet1Solder/targetSetSolder/
+       sleepTempSolder — остальные ~17 полей (preSet2/3, весь Desolder,
+       PID, slope/bias, таймауты, flags) не валидировались вообще.
+       Если бы CRC16 совпал на битом/устаревшем значении (например,
+       после смены диапазона в новой прошивке — см. фикс PreSleep/
+       Standby/SleepTemp), эти поля молча использовались бы как есть,
+       без всякого клэмпа. Теперь проверяются все поля теми же
+       константами, что уже применяют их собственные CONFIG_Set*(). */
+
+    /* Пресеты и уставки — оба инструмента */
+    g_TempSettings.preSet1Solder   = CONFIG_Clamp(g_TempSettings.preSet1Solder,   SET_MIN, SET_MAX);
+    g_TempSettings.preSet2Solder   = CONFIG_Clamp(g_TempSettings.preSet2Solder,   SET_MIN, SET_MAX);
+    g_TempSettings.preSet3Solder   = CONFIG_Clamp(g_TempSettings.preSet3Solder,   SET_MIN, SET_MAX);
     g_TempSettings.targetSetSolder = CONFIG_Clamp(g_TempSettings.targetSetSolder, SET_MIN, SET_MAX);
-    g_ServiceSettings.sleepTempSolder = CONFIG_Clamp(g_ServiceSettings.sleepTempSolder, SLEEP_TEMP_MIN, SLEEP_TEMP_MAX);
+    g_TempSettings.preSet1Desolder   = CONFIG_Clamp(g_TempSettings.preSet1Desolder,   SET_MIN, SET_MAX);
+    g_TempSettings.preSet2Desolder   = CONFIG_Clamp(g_TempSettings.preSet2Desolder,   SET_MIN, SET_MAX);
+    g_TempSettings.preSet3Desolder   = CONFIG_Clamp(g_TempSettings.preSet3Desolder,   SET_MIN, SET_MAX);
+    g_TempSettings.targetSetDesolder = CONFIG_Clamp(g_TempSettings.targetSetDesolder, SET_MIN, SET_MAX);
+
+    /* Температуры сна */
+    g_ServiceSettings.sleepTempSolder   = CONFIG_Clamp(g_ServiceSettings.sleepTempSolder,   SLEEP_TEMP_MIN, SLEEP_TEMP_MAX);
+    g_ServiceSettings.sleepTempDesolder = CONFIG_Clamp(g_ServiceSettings.sleepTempDesolder, SLEEP_TEMP_MIN, SLEEP_TEMP_MAX);
+
+    /* Таймауты сна (минуты) */
+    g_ServiceSettings.preSleepTimeoutSolder   = CONFIG_Clamp(g_ServiceSettings.preSleepTimeoutSolder,   TIMEOUT_MIN, TIMEOUT_MAX);
+    g_ServiceSettings.sleepTimeoutSolder      = CONFIG_Clamp(g_ServiceSettings.sleepTimeoutSolder,      TIMEOUT_MIN, TIMEOUT_MAX);
+    g_ServiceSettings.preSleepTimeoutDesolder = CONFIG_Clamp(g_ServiceSettings.preSleepTimeoutDesolder, TIMEOUT_MIN, TIMEOUT_MAX);
+    g_ServiceSettings.sleepTimeoutDesolder    = CONFIG_Clamp(g_ServiceSettings.sleepTimeoutDesolder,    TIMEOUT_MIN, TIMEOUT_MAX);
+
+    /* Калибровка RTD (slope/bias) */
+    g_ServiceSettings.slopeSolder   = CONFIG_Clamp(g_ServiceSettings.slopeSolder,   SLOPE_MIN_SOLDER,   SLOPE_MAX_SOLDER);
+    g_ServiceSettings.biasSolder    = CONFIG_Clamp(g_ServiceSettings.biasSolder,    BIAS_MIN_SOLDER,    BIAS_MAX_SOLDER);
+    g_ServiceSettings.slopeDesolder = CONFIG_Clamp(g_ServiceSettings.slopeDesolder, SLOPE_MIN_DESOLDER, SLOPE_MAX_DESOLDER);
+    g_ServiceSettings.biasDesolder  = CONFIG_Clamp(g_ServiceSettings.biasDesolder,  BIAS_MIN_DESOLDER,  BIAS_MAX_DESOLDER);
+
+    /* Коэффициенты ПИД */
+    g_ServiceSettings.KpSolder   = CONFIG_Clamp(g_ServiceSettings.KpSolder,   PID_KP_MIN, PID_KP_MAX);
+    g_ServiceSettings.KiSolder   = CONFIG_Clamp(g_ServiceSettings.KiSolder,   PID_KI_MIN, PID_KI_MAX);
+    g_ServiceSettings.KdSolder   = CONFIG_Clamp(g_ServiceSettings.KdSolder,   PID_KD_MIN, PID_KD_MAX);
+    g_ServiceSettings.KpDesolder = CONFIG_Clamp(g_ServiceSettings.KpDesolder, PID_KP_MIN, PID_KP_MAX);
+    g_ServiceSettings.KiDesolder = CONFIG_Clamp(g_ServiceSettings.KiDesolder, PID_KI_MIN, PID_KI_MAX);
+    g_ServiceSettings.KdDesolder = CONFIG_Clamp(g_ServiceSettings.KdDesolder, PID_KD_MIN, PID_KD_MAX);
+
+    /* flags — маскируем неизвестные/зарезервированные биты (валидны
+       только 5 младших, см. FLAG_* в config.h) */
+    g_ServiceSettings.flags &= (FLAG_SLEEP_SOLDER_EN | FLAG_SLEEP_DESOLDER_EN | FLAG_BZ_EN |
+                                 FLAG_TOOL_EN_SOLDER | FLAG_TOOL_EN_DESOLDER);
 }
 
 uint16_t CONFIG_GetPresetSolder(uint8_t num) {

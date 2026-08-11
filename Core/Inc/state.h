@@ -76,8 +76,6 @@ uint16_t    STATE_GetExpertItemValue(uint8_t idx);
     ЛОГИКА СНА (ПРОБРОС В CONFIG)
    ======================================================================= */
 
-void STATE_DeactivateSleepSolder(void);
-void STATE_DeactivateSleepDesolder(void);
 void STATE_SyncSleepTimeouts(void);
 
 /* =======================================================================

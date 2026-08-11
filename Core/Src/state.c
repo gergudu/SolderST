@@ -250,12 +250,9 @@ void STATE_ServiceToggleTool(void) {
 }
 
 /* --- Проброс функций сна ---
-   STATE_ActivateSleepSolder/Desolder удалены — не вызывались нигде,
-   heater.c зовёт CONFIG_ActivateSleepCounterSolder/Desolder() напрямую.
-   STATE_DeactivateSleepSolder/Desolder — используются (commands.c,
-   COMMANDS_TogglePower), оставлены. */
-void STATE_DeactivateSleepSolder(void)   { CONFIG_DeactivateSleepCounterSolder(); }
-void STATE_DeactivateSleepDesolder(void) { CONFIG_DeactivateSleepCounterDesolder(); }
+   Весь прокси-слой (STATE_Activate/DeactivateSleepSolder/Desolder)
+   удалён — heater.c и commands.c зовут
+   CONFIG_Activate/DeactivateSleepCounterSolder/Desolder() напрямую. */
 void STATE_SyncSleepTimeouts(void) {
     if (CONFIG_IsSleepCounterActiveSolder()) CONFIG_ActivateSleepCounterSolder();
     if (CONFIG_IsSleepCounterActiveDesolder())  CONFIG_ActivateSleepCounterDesolder();

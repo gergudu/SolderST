@@ -299,7 +299,7 @@ void COMMANDS_TogglePower(void) {
         is_desolder ? HEATER_ResetSleepDesolder() : HEATER_ResetSleepSolder();
     } else {
         *pwr_flag = false;
-        is_desolder ? STATE_DeactivateSleepDesolder() : STATE_DeactivateSleepSolder();
+        is_desolder ? CONFIG_DeactivateSleepCounterDesolder() : CONFIG_DeactivateSleepCounterSolder();
     }
 
     /* Персистентность статуса вкл/выкл — как и SET*, переживает перезагрузку */
