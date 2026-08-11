@@ -187,7 +187,6 @@ bool CONFIG_LoadFromEEPROM(void);
 bool CONFIG_SaveToEEPROM(void);
 void CONFIG_ValidateAll(void);
 bool CONFIG_IsDirty(void);
-void CONFIG_SaveServiceSettings(void);
 
 /* Пресеты */
 void CONFIG_SetPresetSolder(uint8_t num, uint16_t val);

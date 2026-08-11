@@ -242,8 +242,6 @@ void STATE_MenuToggleEdit(void) {
     // Убрано принудительное сохранение при выходе - теперь всё через таймер
 }
 
-void STATE_MenuClick(void) { STATE_MenuToggleEdit(); }
-
 void STATE_ServiceToggleTool(void) {
     bool want_solder = !g_WorkFlags.tool;
     if (!HEATER_IsToolOk(want_solder)) return; /* инструмент неисправен/не подключен */
@@ -251,11 +249,13 @@ void STATE_ServiceToggleTool(void) {
     g_UI_NeedsClear = true;
 }
 
-/* --- Проброс функций сна --- */
-void STATE_ActivateSleepSolder(void)   { CONFIG_ActivateSleepCounterSolder(); }
-void STATE_DeactivateSleepSolder(void) { CONFIG_DeactivateSleepCounterSolder(); }
-void STATE_ActivateSleepDesolder(void)    { CONFIG_ActivateSleepCounterDesolder(); }
-void STATE_DeactivateSleepDesolder(void)  { CONFIG_DeactivateSleepCounterDesolder(); }
+/* --- Проброс функций сна ---
+   STATE_ActivateSleepSolder/Desolder удалены — не вызывались нигде,
+   heater.c зовёт CONFIG_ActivateSleepCounterSolder/Desolder() напрямую.
+   STATE_DeactivateSleepSolder/Desolder — используются (commands.c,
+   COMMANDS_TogglePower), оставлены. */
+void STATE_DeactivateSleepSolder(void)   { CONFIG_DeactivateSleepCounterSolder(); }
+void STATE_DeactivateSleepDesolder(void) { CONFIG_DeactivateSleepCounterDesolder(); }
 void STATE_SyncSleepTimeouts(void) {
     if (CONFIG_IsSleepCounterActiveSolder()) CONFIG_ActivateSleepCounterSolder();
     if (CONFIG_IsSleepCounterActiveDesolder())  CONFIG_ActivateSleepCounterDesolder();
@@ -263,11 +263,9 @@ void STATE_SyncSleepTimeouts(void) {
 
 /* --- Геттеры --- */
 uint8_t     STATE_GetMenuCursor(void)        { return g_MenuCursor; }
-uint8_t     STATE_GetMenuTop(void)           { return g_MenuTop; }
 bool        STATE_IsEditing(void)            { return g_IsEditing; }
 bool        STATE_IsServiceEditingSolder(void) { return g_WorkFlags.tool; }
 uint8_t     STATE_GetMenuTotalItems(void)    { return MENU_TOTAL_ITEMS; }
-uint8_t     STATE_GetMenuVisibleRows(void)   { return MENU_VISIBLE_ROWS; }
 const char* STATE_GetItemLabel(uint8_t idx)  { return (idx < MENU_TOTAL_ITEMS) ? g_ServiceMenu[idx].label : ""; }
 uint16_t STATE_GetItemValue(uint8_t idx) {
     if (idx >= MENU_TOTAL_ITEMS || g_ServiceMenu[idx].valueSolder == NULL) return 0;

@@ -341,4 +341,5 @@ void CONFIG_DeactivateSleepCounterDesolder(void) { g_SleepCounters.activeDesolde
 bool CONFIG_IsSleepCounterActiveSolder(void) { return g_SleepCounters.activeSolder; }
 bool CONFIG_IsSleepCounterActiveDesolder(void)  { return g_SleepCounters.activeDesolder; }
 bool CONFIG_IsDirty(void) { return g_DirtyFlags.all != 0; }
-void CONFIG_SaveServiceSettings(void) { CONFIG_SaveToEEPROM(); }
+/* CONFIG_SaveServiceSettings удалена — не вызывалась, инкрементальный
+   dirty-flag механизм (CONFIG_SaveToEEPROM) уже всё сохраняет сам. */

@@ -88,7 +88,6 @@ typedef struct {
 extern volatile ButtonContext_t g_ButtonContext;
 
 ButtonEvent_t BUTTONS_Process(void);
-void BUTTONS_ResetFSM(void);
 uint16_t BUTTONS_GetRepeatIteration(void);
 
 #endif

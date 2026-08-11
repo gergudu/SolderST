@@ -164,15 +164,6 @@ ButtonEvent_t BUTTONS_Process(void) {
     return event;
 }
 
-/**
- * @brief Сброс состояний (при ошибках или инициализации)
- */
-void BUTTONS_ResetFSM(void) {
-    g_ButtonContext.state = BTN_STATE_IDLE;
-    g_ButtonContext.buttons_tick = 0;
-    g_ButtonContext.long_press_fired = false;
-}
-
 uint16_t BUTTONS_GetRepeatIteration(void) {
     // Возвращаем количество интервалов удержания для нелинейного изменения значений
     if (!g_ButtonContext.long_press_fired) return 0;

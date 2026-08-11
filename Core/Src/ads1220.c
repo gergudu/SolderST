@@ -139,11 +139,8 @@ bool ADS1220_InitDesolder(void) {
     return init_chip(ADS1220_Desolder_CS_GPIO_Port, ADS1220_Desolder_CS_Pin);
 }
 
-bool ADS1220_Init(void) {
-    bool ok  = ADS1220_InitSolder();
-    ok &= ADS1220_InitDesolder();
-    return ok;
-}
+/* ADS1220_Init() (комбинированная InitSolder+InitDesolder) удалена —
+   не вызывалась, main.c зовёт две раздельные функции сам. */
 
 bool ADS1220_ReadTempSolder(float *out_temp_c) {
     int32_t raw = 0;

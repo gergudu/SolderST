@@ -56,7 +56,6 @@ void         STATE_ResetMenu(void);
 
 void STATE_MenuNavigate(int8_t dir);
 void STATE_MenuToggleEdit(void);
-void STATE_MenuClick(void);
 void STATE_ServiceToggleTool(void);
 
 /* Expert меню */
@@ -77,9 +76,7 @@ uint16_t    STATE_GetExpertItemValue(uint8_t idx);
     ЛОГИКА СНА (ПРОБРОС В CONFIG)
    ======================================================================= */
 
-void STATE_ActivateSleepSolder(void);
 void STATE_DeactivateSleepSolder(void);
-void STATE_ActivateSleepDesolder(void);
 void STATE_DeactivateSleepDesolder(void);
 void STATE_SyncSleepTimeouts(void);
 
@@ -88,11 +85,9 @@ void STATE_SyncSleepTimeouts(void);
    ======================================================================= */
 
 uint8_t     STATE_GetMenuCursor(void);
-uint8_t     STATE_GetMenuTop(void);
 bool        STATE_IsEditing(void);
 bool        STATE_IsServiceEditingSolder(void);
 uint8_t     STATE_GetMenuTotalItems(void);
-uint8_t     STATE_GetMenuVisibleRows(void);
 const char* STATE_GetItemLabel(uint8_t idx);
 uint16_t    STATE_GetItemValue(uint8_t idx);
 bool        STATE_IsServiceItemAction(uint8_t idx);
