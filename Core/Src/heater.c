@@ -157,13 +157,16 @@ static inline bool VacBtn_Pressed(void) {
     return HAL_GPIO_ReadPin(Btn_Pump_GPIO_Port, Btn_Pump_Pin) == GPIO_PIN_RESET;
 }
 
+/** Указатели на GPIO-функции конкретного канала — параметризуют
+    Channel_Tick()/HEATER_OnSleepTick(), чтобы не дублировать логику
+    паяльника/отсоса. */
+typedef void (*SetPinFn)(bool on);
+typedef bool (*TestPinFn)(void);
+
 /* =========================================================================
  * Внутренние функции: таймеры сна
  * ========================================================================= */
 
-/**
- * @brief Целевая температура с учётом состояния сна.
- */
 /**
  * @brief Целевая температура с учётом состояния сна.
  *        Публичная — единая точка истины для "эффективной" уставки
@@ -187,28 +190,42 @@ float HEATER_GetEffectiveTargetDesolder(void) {
  *
  * Реализовано как callback — вызывается из config.c после декремента.
  */
-void HEATER_OnSleepTickSolder(void) {
-    if (!g_WorkFlags.pwrIsOnSolder) return;
-    if (!s_solder.status.is_ok) return; /* канал неисправен/не подключен — таймер сна не тикает */
+/**
+ * @brief Обработка TIM10-тиков сна для одного канала — единая логика
+ *        автомата (была продублирована в HEATER_OnSleepTickSolder/
+ *        Desolder ~25 идентичных строк на канал).
+ * @param ch            Канал (s_solder/s_desolder)
+ * @param is_solder      Для выбора CONFIG_ResetSleepCounterToSleep()/
+ *                       CONFIG_Deactivate*Counter{Solder,Desolder}()
+ * @param pwrIsOn        &g_WorkFlags.pwrIsOnSolder / pwrIsOnVac
+ * @param preSleepFlag   &g_WorkFlags.preSleepSolder / preSleepDesolder
+ * @param set_pin        Solder_SetPin / Desolder_SetPin
+ */
+static void HEATER_OnSleepTick(HeaterChannel_t *ch, bool is_solder,
+                                volatile bool *pwrIsOn, volatile bool *preSleepFlag,
+                                SetPinFn set_pin) {
+    if (!*pwrIsOn) return;
+    if (!ch->status.is_ok) return; /* канал неисправен/не подключен — таймер сна не тикает */
 
-    switch (s_solder.sleep_state) {
+    switch (ch->sleep_state) {
         case SLEEP_STATE_ACTIVE:
             /* Счётчик дошёл до 0 — переходим в полусон */
-            s_solder.sleep_state = SLEEP_STATE_PRESLEEP;
-            g_WorkFlags.preSleepSolder = true;
-            PID_Reset(&s_solder.pid);
+            ch->sleep_state = SLEEP_STATE_PRESLEEP;
+            *preSleepFlag = true;
+            PID_Reset(&ch->pid);
             /* Взвод второй ступени */
-            CONFIG_ResetSleepCounterToSleep(true);
+            CONFIG_ResetSleepCounterToSleep(is_solder);
             break;
 
         case SLEEP_STATE_PRESLEEP:
             /* Вторая ступень — выключение */
-            s_solder.sleep_state = SLEEP_STATE_OFF;
-            g_WorkFlags.pwrIsOnSolder = false;
-            g_WorkFlags.preSleepSolder = false;
-            CONFIG_DeactivateSleepCounterSolder();
-            Solder_SetPin(false);
-            PID_Reset(&s_solder.pid);
+            ch->sleep_state = SLEEP_STATE_OFF;
+            *pwrIsOn = false;
+            *preSleepFlag = false;
+            if (is_solder) CONFIG_DeactivateSleepCounterSolder();
+            else            CONFIG_DeactivateSleepCounterDesolder();
+            set_pin(false);
+            PID_Reset(&ch->pid);
             break;
 
         default:
@@ -216,30 +233,16 @@ void HEATER_OnSleepTickSolder(void) {
     }
 }
 
+void HEATER_OnSleepTickSolder(void) {
+    HEATER_OnSleepTick(&s_solder, true,
+                        &g_WorkFlags.pwrIsOnSolder, &g_WorkFlags.preSleepSolder,
+                        Solder_SetPin);
+}
+
 void HEATER_OnSleepTickDesolder(void) {
-    if (!g_WorkFlags.pwrIsOnVac) return;
-    if (!s_desolder.status.is_ok) return; /* канал неисправен/не подключен — таймер сна не тикает */
-
-    switch (s_desolder.sleep_state) {
-        case SLEEP_STATE_ACTIVE:
-            s_desolder.sleep_state = SLEEP_STATE_PRESLEEP;
-            g_WorkFlags.preSleepDesolder = true;
-            PID_Reset(&s_desolder.pid);
-            CONFIG_ResetSleepCounterToSleep(false);
-            break;
-
-        case SLEEP_STATE_PRESLEEP:
-            s_desolder.sleep_state = SLEEP_STATE_OFF;
-            g_WorkFlags.pwrIsOnVac = false;
-            g_WorkFlags.preSleepDesolder = false;
-            CONFIG_DeactivateSleepCounterDesolder();
-            Desolder_SetPin(false);
-            PID_Reset(&s_desolder.pid);
-            break;
-
-        default:
-            break;
-    }
+    HEATER_OnSleepTick(&s_desolder, false,
+                        &g_WorkFlags.pwrIsOnVac, &g_WorkFlags.preSleepDesolder,
+                        Desolder_SetPin);
 }
 
 /* =========================================================================
@@ -291,113 +294,87 @@ static void UpdateRtdFault(HeaterChannel_t *ch, uint16_t temp_c, bool heater_ok)
     }
 }
 
-static void Channel_Tick_Solder(void) {
-    bool enabled = g_WorkFlags.pwrIsOnSolder;
-
+/**
+ * @brief Тик одного канала нагрева (ПИД + программный ШИМ + гейтинг
+ *        по целостности) — была продублирована в Channel_Tick_Solder/
+ *        Desolder, ~50 идентичных строк на канал.
+ * @param ch             Канал (s_solder/s_desolder)
+ * @param enabled         g_WorkFlags.pwrIsOnSolder / pwrIsOnVac (значение,
+ *                        не указатель — здесь только читаем)
+ * @param kp,ki,kd        Коэффициенты ПИД из g_ServiceSettings, уже
+ *                        поделенные на 100 (вызывающая сторона)
+ * @param target          HEATER_GetEffectiveTargetSolder/Desolder()
+ * @param current_temp    g_tCurrentSolder / g_tCurrentDesolder
+ * @param set_pin         Solder_SetPin / Desolder_SetPin
+ * @param test_pin        Solder_TestPin / Desolder_TestPin
+ */
+static void Channel_Tick(HeaterChannel_t *ch, bool enabled,
+                          float kp, float ki, float kd,
+                          float target, uint16_t current_temp,
+                          SetPinFn set_pin, TestPinFn test_pin) {
     /* --- Обновление коэффициентов ПИД из конфига --- */
-    PID_UpdateCoeffs(&s_solder.pid,
-        g_ServiceSettings.KpSolder / 100.0f,
-        g_ServiceSettings.KiSolder / 100.0f,
-        g_ServiceSettings.KdSolder / 100.0f);
+    PID_UpdateCoeffs(&ch->pid, kp, ki, kd);
 
     /* --- ПИД пересчёт каждые PID_PERIOD_TICKS --- */
-    s_solder.pid_counter++;
-    if (s_solder.pid_counter >= PID_PERIOD_TICKS) {
-        s_solder.pid_counter = 0;
+    ch->pid_counter++;
+    if (ch->pid_counter >= PID_PERIOD_TICKS) {
+        ch->pid_counter = 0;
 
         if (enabled) {
-            float target  = HEATER_GetEffectiveTargetSolder();
-            float current = (float)g_tCurrentSolder;
-            float out = PID_Compute(&s_solder.pid, target, current);
-            s_solder.duty_ticks = (uint32_t)(out * (float)PWM_PERIOD_TICKS);
+            float out = PID_Compute(&ch->pid, target, (float)current_temp);
+            ch->duty_ticks = (uint32_t)(out * (float)PWM_PERIOD_TICKS);
         } else {
-            s_solder.duty_ticks = 0;
+            ch->duty_ticks = 0;
         }
     }
 
     /* --- Программный ШИМ --- */
-    s_solder.pwm_counter++;
-    if (s_solder.pwm_counter >= PWM_PERIOD_TICKS) {
-        s_solder.pwm_counter = 0;
+    ch->pwm_counter++;
+    if (ch->pwm_counter >= PWM_PERIOD_TICKS) {
+        ch->pwm_counter = 0;
     }
 
-    bool pwm_on = (s_solder.pwm_counter < s_solder.duty_ticks);
+    bool pwm_on = (ch->pwm_counter < ch->duty_ticks);
 
     /* --- Контроль целостности нагревателя (пока ключ закрыт) --- */
     if (!pwm_on) {
-        s_solder.status.heater_ok = Solder_TestPin();
+        ch->status.heater_ok = test_pin();
     }
 
     /* --- Диагностика RTD/подключения (ADS1220 + Test) --- */
-    UpdateRtdFault(&s_solder, g_tCurrentSolder, s_solder.status.heater_ok);
+    UpdateRtdFault(ch, current_temp, ch->status.heater_ok);
 
     /* --- Управление ключом ---
        ВАЖНО: гейтим не только по heater_ok (цепь нагревателя цела),
        но и по status.is_ok — иначе при обрыве/КЗ RTD ПИД продолжит
        слепо греть по заведомо неверному показанию температуры. */
-    bool drive = enabled && pwm_on && s_solder.status.is_ok;
-    Solder_SetPin(drive);
-    if (!s_solder.status.is_ok) {
-        PID_Reset(&s_solder.pid); /* не копим интеграл, пока канал заблокирован */
+    bool drive = enabled && pwm_on && ch->status.is_ok;
+    set_pin(drive);
+    if (!ch->status.is_ok) {
+        PID_Reset(&ch->pid); /* не копим интеграл, пока канал заблокирован */
     }
 
     /* --- Статус --- */
-    s_solder.status.in_presleep = (s_solder.sleep_state == SLEEP_STATE_PRESLEEP);
-    s_solder.status.duty = (float)s_solder.duty_ticks / (float)PWM_PERIOD_TICKS;
+    ch->status.in_presleep = (ch->sleep_state == SLEEP_STATE_PRESLEEP);
+    ch->status.duty = (float)ch->duty_ticks / (float)PWM_PERIOD_TICKS;
+}
+
+static void Channel_Tick_Solder(void) {
+    Channel_Tick(&s_solder, g_WorkFlags.pwrIsOnSolder,
+                 g_ServiceSettings.KpSolder / 100.0f,
+                 g_ServiceSettings.KiSolder / 100.0f,
+                 g_ServiceSettings.KdSolder / 100.0f,
+                 HEATER_GetEffectiveTargetSolder(), g_tCurrentSolder,
+                 Solder_SetPin, Solder_TestPin);
 }
 
 static void Channel_Tick_Desolder(void) {
-    bool enabled = g_WorkFlags.pwrIsOnVac;
-
-    /* --- Обновление коэффициентов ПИД из конфига --- */
-    PID_UpdateCoeffs(&s_desolder.pid,
-        g_ServiceSettings.KpDesolder / 100.0f,
-        g_ServiceSettings.KiDesolder / 100.0f,
-        g_ServiceSettings.KdDesolder / 100.0f);
-
-    /* --- ПИД пересчёт каждые PID_PERIOD_TICKS --- */
-    s_desolder.pid_counter++;
-    if (s_desolder.pid_counter >= PID_PERIOD_TICKS) {
-        s_desolder.pid_counter = 0;
-
-        if (enabled) {
-            float target  = HEATER_GetEffectiveTargetDesolder();
-            float current = (float)g_tCurrentDesolder;
-            float out = PID_Compute(&s_desolder.pid, target, current);
-            s_desolder.duty_ticks = (uint32_t)(out * (float)PWM_PERIOD_TICKS);
-        } else {
-            s_desolder.duty_ticks = 0;
-        }
-    }
-
-    /* --- Программный ШИМ --- */
-    s_desolder.pwm_counter++;
-    if (s_desolder.pwm_counter >= PWM_PERIOD_TICKS) {
-        s_desolder.pwm_counter = 0;
-    }
-
-    bool pwm_on = (s_desolder.pwm_counter < s_desolder.duty_ticks);
-
-    /* --- Контроль целостности нагревателя (пока ключ закрыт) --- */
-    if (!pwm_on) {
-        s_desolder.status.heater_ok = Desolder_TestPin();
-    }
-
-    /* --- Диагностика RTD/подключения (ADS1220 + Test) --- */
-    UpdateRtdFault(&s_desolder, g_tCurrentDesolder, s_desolder.status.heater_ok);
-
-    /* --- Управление ключом ---
-       Тот же гейтинг по status.is_ok, что и у паяльника: при обрыве/КЗ
-       RTD ПИД не должен слепо греть по заведомо неверной температуре. */
-    bool drive = enabled && pwm_on && s_desolder.status.is_ok;
-    Desolder_SetPin(drive);
-    if (!s_desolder.status.is_ok) {
-        PID_Reset(&s_desolder.pid);
-    }
-
-    /* --- Статус --- */
-    s_desolder.status.in_presleep = (s_desolder.sleep_state == SLEEP_STATE_PRESLEEP);
-    s_desolder.status.duty = (float)s_desolder.duty_ticks / (float)PWM_PERIOD_TICKS;
+    Channel_Tick(&s_desolder, g_WorkFlags.pwrIsOnVac,
+                 g_ServiceSettings.KpDesolder / 100.0f,
+                 g_ServiceSettings.KiDesolder / 100.0f,
+                 g_ServiceSettings.KdDesolder / 100.0f,
+                 HEATER_GetEffectiveTargetDesolder(), g_tCurrentDesolder,
+                 Desolder_SetPin, Desolder_TestPin);
 }
 
 /* =========================================================================
