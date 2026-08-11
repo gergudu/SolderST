@@ -72,11 +72,6 @@ static void FormatMenuValue(char* out_buf, size_t size, uint8_t idx, bool isSele
 
     uint16_t val = STATE_GetItemValue(idx);
 
-    // Пересчет специфических параметров (таймеры в минуты)
-    if (strcmp(label, "PreSleep") == 0 || strcmp(label, "Standby") == 0) {
-        val = (val * 30) / 60;
-    }
-
     // Выбор формата: с рамками при редактировании или обычный
     const char* fmt = (isEditing && isSelected) ? "[%3u]" : " %3u ";
     snprintf(out_buf, size, fmt, val);

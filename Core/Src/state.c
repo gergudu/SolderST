@@ -143,13 +143,13 @@ static ServiceMenuItem_t g_ServiceMenu[] = {
     {"Выход",  NULL, NULL, NULL, NULL, NULL, 0, 0, 0},
 
     {"PreSleep", &g_ServiceSettings.preSleepTimeoutSolder, &g_ServiceSettings.preSleepTimeoutDesolder,
-     CONFIG_SetPreSleepTimeoutSolder, CONFIG_SetPreSleepTimeoutDesolder, STATE_SyncSleepTimeouts, 0, 30, 1},
+     CONFIG_SetPreSleepTimeoutSolder, CONFIG_SetPreSleepTimeoutDesolder, STATE_SyncSleepTimeouts, TIMEOUT_MIN, TIMEOUT_MAX, 1},
 
     {"SleepTemp", &g_ServiceSettings.sleepTempSolder, &g_ServiceSettings.sleepTempDesolder,
-     CONFIG_SetSleepTempSolder, CONFIG_SetSleepTempDesolder, NULL, 150, 450, 5},
+     CONFIG_SetSleepTempSolder, CONFIG_SetSleepTempDesolder, NULL, SLEEP_TEMP_MIN, SLEEP_TEMP_MAX, 5},
 
     {"Standby",  &g_ServiceSettings.sleepTimeoutSolder, &g_ServiceSettings.sleepTimeoutDesolder,
-     CONFIG_SetSleepTimeoutSolder, CONFIG_SetSleepTimeoutDesolder, STATE_SyncSleepTimeouts, 0, 60, 1},
+     CONFIG_SetSleepTimeoutSolder, CONFIG_SetSleepTimeoutDesolder, STATE_SyncSleepTimeouts, TIMEOUT_MIN, TIMEOUT_MAX, 1},
 
     {"Expert", NULL, NULL, NULL, NULL, NULL, 0, 0, 0},
 };

@@ -20,6 +20,7 @@ typedef struct {
     uint16_t *p_val;
     uint16_t min;
     uint16_t max;
+    uint16_t step;
     void (*setter)(uint16_t);
 } EditContext_t;
 
@@ -32,7 +33,6 @@ static int16_t CalculateStep(uint16_t base_step, bool is_up) {
     int16_t s = base_step;
     if (iter >= 15)      s *= 10;
     else if (iter >= 5)  s *= 5;
-    if (s > 10) s = 10;
     return is_up ? s : -s;
 }
 
@@ -44,11 +44,16 @@ static bool GetEditContext(EditContext_t *ctx) {
         bool is_solder = (mode == SYS_MODE_MAIN_SOLDER);
         ctx->p_val  = is_solder ? &g_TempSettings.targetSetSolder : &g_TempSettings.targetSetDesolder;
         ctx->setter = is_solder ? CONFIG_SetTargetSolder : CONFIG_SetTargetDesolder;
-        ctx->min    = 50; ctx->max = 450;
+        ctx->min = SET_MIN; ctx->max = SET_MAX; ctx->step = 1;
         return true;
     }
 
-    // 2. Сервисное меню
+    // 2. Сервисное меню — min/max/step берутся из самой таблицы
+    // g_ServiceMenu (ServiceMenuItem_t), а не переопределяются здесь
+    // по строковому сравнению лейбла. Раньше эти хардкоды (0-240,
+    // 50-450) вообще не совпадали с реальными пределами, которые
+    // и так уже клэмпит сам сеттер (TIMEOUT_MIN/MAX, SLEEP_TEMP_MIN/MAX) —
+    // теперь единственный источник истины — сама таблица.
     if (mode == SYS_MODE_SERVICE || mode == SYS_MODE_EXPERT) {
         const ServiceMenuItem_t *item = STATE_GetServiceMenuItem(STATE_GetMenuCursor());
         if (!item) return false;
@@ -56,16 +61,7 @@ static bool GetEditContext(EditContext_t *ctx) {
         bool is_solder = STATE_IsServiceEditingSolder();
         ctx->p_val  = is_solder ? item->valueSolder : item->valueDesolder;
         ctx->setter = is_solder ? item->setterSolder : item->setterDesolder;
-
-        // --- ГИБКИЕ ГРАНИЦЫ ---
-        const char* label = item->label; // Предполагаем, что в структуре есть label
-        if (strcmp(label, "PreSleep") == 0 || strcmp(label, "Standby") == 0) {
-            ctx->min = 0;   // Минимально 0 минут
-            ctx->max = 240; // Максимально 120 минут (240 тиков)
-        } else {
-            ctx->min = 50;  // Для калибровки и прочего
-            ctx->max = 450;
-        }
+        ctx->min = item->min; ctx->max = item->max; ctx->step = item->step ? item->step : 1;
         return true;
     }
     return false;
@@ -75,33 +71,21 @@ static void ChangeValue(int8_t dir, bool use_accel) {
     EditContext_t ctx;
     if (!GetEditContext(&ctx)) return;
 
-    // Определяем, является ли параметр таймером (PreSleep/Standby)
-    bool is_timer = false;
-    if (STATE_GetMode() >= SYS_MODE_SERVICE) {
-        const char* label = STATE_GetItemLabel(STATE_GetMenuCursor());
-        if (strcmp(label, "PreSleep") == 0 || strcmp(label, "Standby") == 0) {
-            is_timer = true;
-        }
-    }
-
-    // Рассчитываем дельту
-    int16_t delta = use_accel ? CalculateStep(1, dir > 0) : (dir > 0 ? 1 : -1);
-
-    // Если это таймер, то на экране мы видим минуты, а в памяти лежат тики (1 мин = 2 тика)
-    // Чтобы изменить на 1 минуту, нужно изменить на 2 тика.
-    if (is_timer) {
-        delta *= 2;
-    }
+    int16_t delta = use_accel ? CalculateStep(ctx.step, dir > 0) : (dir > 0 ? (int16_t)ctx.step : -(int16_t)ctx.step);
 
     int32_t newVal = (int32_t)(*ctx.p_val) + delta;
 
-    /* При ускорении (шаг 5 или 10, см. CalculateStep) не просто прибавляем
-       шаг от текущего значения, а "перепрыгиваем" на ближайшее круглое
-       число, кратное этому шагу, в направлении движения — иначе на
-       практике получаются некруглые значения вроде 173→178→183 вместо
-       ожидаемого 173→175→180. Не применяем к таймерам — они в тиках
-       (1 мин = 2 тика), округление до 5/10 тиков даёт некруглые минуты. */
-    if (use_accel && !is_timer) {
+    /* При ускорении (шаг умножен на 5 или 10, см. CalculateStep) не
+       просто прибавляем шаг от текущего значения, а "перепрыгиваем"
+       на ближайшее круглое число, кратное этому шагу, в направлении
+       движения — иначе на практике получаются некруглые значения
+       вроде 173→178→183 вместо ожидаемого 173→175→180.
+       Раньше это не применялось к таймерам (PreSleep/Standby) из
+       расчёта "они хранятся в тиках, округление даёт некруглые
+       минуты" — это было неверно: они хранятся в минутах напрямую
+       (см. CONFIG_MinutesToTicks), так что округление тут так же
+       уместно, как и везде. */
+    if (use_accel) {
         int16_t roundStep = (delta < 0) ? -delta : delta;
         if (roundStep >= 5) {
             int32_t cur = (int32_t)(*ctx.p_val);
