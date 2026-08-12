@@ -1,22 +1,65 @@
 #include "buzzer.h"
 #include "main.h"
+#include <stdbool.h>
 
-/* Тиков TIM5 (100 Гц, 10 мс/тик) до автовыключения. 0 = зуммер молчит. */
-static volatile uint16_t s_ticksLeft = 0;
+/* Тиков TIM5 (100 Гц, 10 мс/тик) на "звук"/"паузу" текущего паттерна. */
+static volatile uint16_t s_onTicks   = 0;
+static volatile uint16_t s_offTicks  = 0;
+static volatile uint8_t  s_pulsesLeft = 0;  /* сколько импульсов ещё не отзвучало, включая текущий */
+static volatile bool     s_isOnPhase  = false;
+static volatile uint16_t s_phaseTicksLeft = 0;
 
-void BUZZER_Beep(uint16_t duration_ms) {
-    uint16_t ticks = duration_ms / 10;
-    if (ticks == 0) ticks = 1;
+static inline uint16_t MsToTicks(uint16_t ms) {
+    uint16_t t = ms / 10;
+    return t;
+}
+
+void BUZZER_BeepPattern(uint8_t count, uint16_t on_ms, uint16_t off_ms) {
+    if (count == 0) return;
+
+    uint16_t onT = MsToTicks(on_ms);
+    if (onT == 0) onT = 1;
+
+    s_onTicks    = onT;
+    s_offTicks   = MsToTicks(off_ms);
+    s_pulsesLeft = count;
+    s_isOnPhase  = true;
+    s_phaseTicksLeft = onT;
 
     HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_SET);
-    s_ticksLeft = ticks; /* реcтарт отсчёта, а не сложение */
+}
+
+void BUZZER_Beep(uint16_t duration_ms) {
+    BUZZER_BeepPattern(1, duration_ms, 0);
 }
 
 void BUZZER_Tick(void) {
-    if (s_ticksLeft == 0) return;
+    if (s_pulsesLeft == 0) return;
 
-    s_ticksLeft--;
-    if (s_ticksLeft == 0) {
+    if (s_phaseTicksLeft > 0) {
+        s_phaseTicksLeft--;
+        return;
+    }
+
+    if (s_isOnPhase) {
+        /* Импульс закончился */
         HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_RESET);
+        s_pulsesLeft--;
+        if (s_pulsesLeft == 0) return; /* весь паттерн отыгран */
+
+        if (s_offTicks == 0) {
+            /* Без паузы — сразу следующий импульс */
+            s_isOnPhase = true;
+            s_phaseTicksLeft = s_onTicks;
+            HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_SET);
+        } else {
+            s_isOnPhase = false;
+            s_phaseTicksLeft = s_offTicks;
+        }
+    } else {
+        /* Пауза закончилась — следующий импульс */
+        s_isOnPhase = true;
+        s_phaseTicksLeft = s_onTicks;
+        HAL_GPIO_WritePin(BEEP_GPIO_Port, BEEP_Pin, GPIO_PIN_SET);
     }
 }

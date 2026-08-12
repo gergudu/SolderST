@@ -28,6 +28,7 @@
 #include "config.h"
 #include "main.h"
 #include "tim.h"
+#include "buzzer.h"
 #include <string.h>
 
 /* =========================================================================
@@ -58,6 +59,10 @@ typedef struct {
 
 static HeaterChannel_t s_solder;
 static HeaterChannel_t s_desolder;
+
+/* Текущее состояние силового питания (PWR_ON, PC13, push-pull,
+   HIGH = включено). См. HEATER_UpdatePowerPin(). */
+static bool s_powered = false;
 
 /* =========================================================================
  * Публичные функции
@@ -215,6 +220,7 @@ static void HEATER_OnSleepTick(HeaterChannel_t *ch, bool is_solder,
             PID_Reset(&ch->pid);
             /* Взвод второй ступени */
             CONFIG_ResetSleepCounterToSleep(is_solder);
+            BUZZER_Beep(250); /* преслип — один короткий */
             break;
 
         case SLEEP_STATE_PRESLEEP:
@@ -226,6 +232,7 @@ static void HEATER_OnSleepTick(HeaterChannel_t *ch, bool is_solder,
             else            CONFIG_DeactivateSleepCounterDesolder();
             set_pin(false);
             PID_Reset(&ch->pid);
+            BUZZER_Beep(1000); /* полный сон — один длинный */
             break;
 
         default:
@@ -336,13 +343,23 @@ static void Channel_Tick(HeaterChannel_t *ch, bool enabled,
 
     bool pwm_on = (ch->pwm_counter < ch->duty_ticks);
 
-    /* --- Контроль целостности нагревателя (пока ключ закрыт) --- */
-    if (!pwm_on) {
-        ch->status.heater_ok = test_pin();
-    }
+    /* --- Контроль целостности нагревателя + RTD-диагностика ---
+       Только при включённом силовом питании (PWR_ON/PC13) — при
+       выключенном питании Test-пин читает обесточенную цепь и даёт
+       ложный обрыв/КЗ. Пока не запитано, статус просто замораживается
+       на последнем известном значении (безопасно: enabled уже false
+       в это время, drive ниже и так не включит нагреватель). */
+    if (s_powered) {
+        if (!pwm_on) {
+            ch->status.heater_ok = test_pin();
+        }
 
-    /* --- Диагностика RTD/подключения (ADS1220 + Test) --- */
-    UpdateRtdFault(ch, current_temp, ch->status.heater_ok);
+        bool was_ok = ch->status.is_ok;
+        UpdateRtdFault(ch, current_temp, ch->status.heater_ok);
+        if (was_ok && !ch->status.is_ok) {
+            BUZZER_BeepPattern(5, 250, 250); /* неисправность — 5 коротких */
+        }
+    }
 
     /* --- Управление ключом ---
        ВАЖНО: гейтим не только по heater_ok (цепь нагревателя цела),
@@ -410,7 +427,27 @@ void HEATER_Init(void) {
     HAL_TIM_Base_Start_IT(&htim3);
 }
 
+/**
+ * @brief Управление силовым питанием (PWR_ON, PC13, push-pull,
+ *        HIGH = включено). Включено, пока активен хотя бы один
+ *        инструмент (pwrIsOnSolder || pwrIsOnVac) — например, один не
+ *        подключен, а у второго ещё не сработал полный сон; или оба
+ *        уже уснули (оба pwrIsOn == false) — тогда питание снимается.
+ *        На переходе HIGH→LOW — сигнал отключения (один длинный, 3с).
+ */
+static void HEATER_UpdatePowerPin(void) {
+    bool should_be_on = g_WorkFlags.pwrIsOnSolder || g_WorkFlags.pwrIsOnVac;
+    if (should_be_on == s_powered) return;
+
+    HAL_GPIO_WritePin(PWR_ON_GPIO_Port, PWR_ON_Pin, should_be_on ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    if (!should_be_on) {
+        BUZZER_Beep(3000); /* отключение питания */
+    }
+    s_powered = should_be_on;
+}
+
 void HEATER_Tick(void) {
+    HEATER_UpdatePowerPin();
     Channel_Tick_Solder();
     Channel_Tick_Desolder();
 }
