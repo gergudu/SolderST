@@ -27,6 +27,7 @@
 #include "ui.h"
 #include "heater.h"
 #include "ads1220.h"
+#include "buzzer.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -251,6 +252,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
         static uint16_t last_gpio  = 0;
         static uint8_t  stable_cnt = 0;
         if (g_SaveDelayCounter) g_SaveDelayCounter--;
+        BUZZER_Tick();
         uint16_t gpio = (~GPIOA->IDR) & BTN_ALL_PINS;
         if (gpio == last_gpio) { if (stable_cnt < 3) stable_cnt++; }
         else { stable_cnt = 1; last_gpio = gpio; }
