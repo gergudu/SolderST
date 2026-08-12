@@ -187,10 +187,11 @@ void UI_DrawExpertMenu(void) {
     if (cursor >= expert_top + visible) expert_top = cursor - visible + 1;
     bool scrolled = (expert_top != prevTop);
 
-    /* STATE_CheckAndResetDirty() уже вызван и потреблён в UI_UpdateLoop()
-       до диспетчеризации сюда — здесь он всегда вернул бы false.
-       g_forceFullRedraw несёт тот же сигнал (выставляется UI_UpdateLoop
-       при смене режима). Раньше тут был повторный вызов — мёртвый код. */
+    /* STATE_CheckAndResetUINeedsClear() уже вызван и потреблён в
+       UI_UpdateLoop() до диспетчеризации сюда — здесь он всегда вернул
+       бы false. g_forceFullRedraw несёт тот же сигнал (выставляется
+       UI_UpdateLoop при смене режима). Раньше тут был повторный вызов
+       — мёртвый код. */
     bool full_redraw  = g_forceFullRedraw || scrolled;
     bool cursor_moved = (cursor != last_expert_cursor);
     bool edit_changed = (isEditing != exp_was_editing);
@@ -299,7 +300,7 @@ void UI_DrawServiceMenu(void) {
        диспетчеризации сюда — здесь он всегда false. g_forceFullRedraw
        несёт тот же сигнал. Раньше тут читался тот же флаг напрямую —
        мёртвая проверка, разошедшаяся с UI_DrawExpertMenu (там был
-       повторный вызов STATE_CheckAndResetDirty() — тоже мёртвый,
+       повторный вызов STATE_CheckAndResetUINeedsClear() — тоже мёртвый,
        см. правку там же). */
     bool full_redraw  = (g_forceFullRedraw || scrolled);
     bool cursor_moved = (cursor != svc_prev);
@@ -545,7 +546,7 @@ void UI_UpdateLoop(void) {
     SystemMode_t mode = STATE_GetMode();
 
     /* Полная перерисовка при смене режима */
-    bool mode_changed = (mode != g_prevMode) || STATE_CheckAndResetDirty();
+    bool mode_changed = (mode != g_prevMode) || STATE_CheckAndResetUINeedsClear();
     if (mode_changed) {
         DISPLAY_FillScreen(BLACK);
         DISPLAY_ClearAllSlots();

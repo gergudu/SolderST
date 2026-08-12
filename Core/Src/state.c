@@ -282,7 +282,15 @@ const ServiceMenuItem_t* STATE_GetServiceMenuItem(uint8_t idx) {
 }
 bool STATE_IsExpertWarn(void) { return g_ServiceExpertWarn; }
 
-bool STATE_CheckAndResetDirty(void) {
+/**
+ * @brief Проверить и сбросить флаг "экрану нужна полная перерисовка".
+ *        Раньше называлась STATE_CheckAndResetDirty — вводило в
+ *        заблуждение: работает с g_UI_NeedsClear (флаг перерисовки UI),
+ *        а не с "грязной" (несохранённой) конфигурацией — за это
+ *        отвечает CONFIG_IsDirty()/g_DirtyFlags, вещь совершенно
+ *        другая.
+ */
+bool STATE_CheckAndResetUINeedsClear(void) {
     bool tmp = g_UI_NeedsClear;
     g_UI_NeedsClear = false;
     return tmp;

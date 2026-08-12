@@ -47,7 +47,7 @@ typedef struct {
 
 SystemMode_t STATE_GetMode(void);
 void         STATE_SetMode(SystemMode_t mode);
-bool         STATE_CheckAndResetDirty(void);
+bool         STATE_CheckAndResetUINeedsClear(void);
 void         STATE_ResetMenu(void);
 
 /* =======================================================================

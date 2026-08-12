@@ -27,8 +27,6 @@
 #include "ui.h"
 #include "heater.h"
 #include "ads1220.h"
-#include <stdio.h>
-#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
