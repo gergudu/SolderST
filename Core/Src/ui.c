@@ -97,7 +97,8 @@ static void UI_DrawInfoZone(bool full_redraw) {
         DISPLAY_ClearSlot(90); /* иначе после повторного full_redraw с тем же
                                    текстом SmartPrint решит, что рисовать не
                                    надо, хотя пиксели уже стёрты выше */
-        DISPLAY_ClearSlot(91);
+        DISPLAY_ClearSlot(40);
+        DISPLAY_ClearSlot(41);
     }
 
     /* Индикатор записи EEPROM: горит только в момент реальной отложенной
@@ -112,17 +113,6 @@ static void UI_DrawInfoZone(bool full_redraw) {
         g_eepromDotPrev = dot_on;
     }
 
-    /* ВРЕМЕННО (диагностика): сырой код HAL_I2C_IsDeviceReady из проверки
-       присутствия EEPROM при старте. Показывается всегда, а не только
-       при неисправности — чтобы увидеть, что реально возвращает HAL,
-       даже если g_EepromFault почему-то не взводится.
-       0=HAL_OK 1=HAL_ERROR 2=HAL_BUSY 3=HAL_TIMEOUT 99=ещё не было. */
-    {
-        char dbg[16];
-        snprintf(dbg, sizeof(dbg), "hal=%u", g_EepromDebugHalStatus);
-        DISPLAY_SmartPrint(91, sw - 70, 6, dbg, YELLOW, BLACK, &UI_HEADER_FONT);
-    }
-
     /* Неисправность EEPROM — залипающая до перезагрузки (см. eeprom_i2c.c),
        поэтому просто рисуем один раз и оставляем: SmartPrint сам не будет
        перерисовывать неизменившийся текст. */
@@ -133,9 +123,39 @@ static void UI_DrawInfoZone(bool full_redraw) {
                            "Err EEPROM", RED, BLACK, &UI_HEADER_FONT);
     }
 
-    /* TODO: индикаторы таймеров сна (PreSleep/Standby) — разместить
-       правее, в свободной части инфозоны, отдельно для паяльника
-       и отсоса. Резерв места уже заложен высотой инфозоны 30px. */
+    /* Таймеры сна — справа в инфозоне, отдельно на инструмент. Пусто,
+       если инструмент выключен или счётчик не взведён (нечего
+       показывать). Один и тот же g_SleepCounters.counter* используется
+       на обеих ступенях (сначала отсчёт до PreSleep, потом от PreSleep
+       до полного сна) — различаем цветом по HEATER_GetStatus*().in_presleep. */
+    {
+        uint16_t y = UI_INFO_ZONE_H > UI_HEADER_FONT.height
+                   ? (UI_INFO_ZONE_H - UI_HEADER_FONT.height) / 2 : 0;
+        char buf[12];
+        uint16_t rightEdge = sw - 8; /* правая граница следующего непоказанного блока */
+
+        if (CONFIG_IsSleepCounterActiveSolder()) {
+            uint16_t totalSec = g_SleepCounters.counterSolder * 30;
+            snprintf(buf, sizeof(buf), "П %u:%02u", totalSec / 60, totalSec % 60);
+            uint16_t color = HEATER_GetStatusSolder().in_presleep ? YELLOW : CYAN;
+            uint16_t w = DISPLAY_GetTextWidth(buf, &UI_HEADER_FONT);
+            uint16_t x = rightEdge - w;
+            DISPLAY_SmartPrint(40, x, y, buf, color, BLACK, &UI_HEADER_FONT);
+            rightEdge = x - 10; /* 10px зазор перед следующим блоком слева */
+        } else {
+            DISPLAY_ClearSlot(40);
+        }
+
+        if (CONFIG_IsSleepCounterActiveDesolder()) {
+            uint16_t totalSec = g_SleepCounters.counterDesolder * 30;
+            snprintf(buf, sizeof(buf), "О %u:%02u", totalSec / 60, totalSec % 60);
+            uint16_t color = HEATER_GetStatusDesolder().in_presleep ? YELLOW : CYAN;
+            uint16_t w = DISPLAY_GetTextWidth(buf, &UI_HEADER_FONT);
+            DISPLAY_SmartPrint(41, rightEdge - w, y, buf, color, BLACK, &UI_HEADER_FONT);
+        } else {
+            DISPLAY_ClearSlot(41);
+        }
+    }
 }
 
 /* ========================================================================== */
