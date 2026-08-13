@@ -220,7 +220,7 @@ static void HEATER_OnSleepTick(HeaterChannel_t *ch, bool is_solder,
             PID_Reset(&ch->pid);
             /* Взвод второй ступени */
             CONFIG_ResetSleepCounterToSleep(is_solder);
-            BUZZER_Beep(250); /* преслип — один короткий */
+            BUZZER_Beep(250, BUZZER_PRIO_PRESLEEP); /* преслип — один короткий */
             break;
 
         case SLEEP_STATE_PRESLEEP:
@@ -232,7 +232,7 @@ static void HEATER_OnSleepTick(HeaterChannel_t *ch, bool is_solder,
             else            CONFIG_DeactivateSleepCounterDesolder();
             set_pin(false);
             PID_Reset(&ch->pid);
-            BUZZER_Beep(1000); /* полный сон — один длинный */
+            BUZZER_Beep(1000, BUZZER_PRIO_SLEEP); /* полный сон — один длинный */
             break;
 
         default:
@@ -357,7 +357,7 @@ static void Channel_Tick(HeaterChannel_t *ch, bool enabled,
         bool was_ok = ch->status.is_ok;
         UpdateRtdFault(ch, current_temp, ch->status.heater_ok);
         if (was_ok && !ch->status.is_ok) {
-            BUZZER_BeepPattern(5, 250, 250); /* неисправность — 5 коротких */
+            BUZZER_BeepPattern(5, 250, 250, BUZZER_PRIO_FAULT); /* неисправность — 5 коротких */
         }
     }
 
@@ -441,7 +441,7 @@ static void HEATER_UpdatePowerPin(void) {
 
     HAL_GPIO_WritePin(PWR_ON_GPIO_Port, PWR_ON_Pin, should_be_on ? GPIO_PIN_SET : GPIO_PIN_RESET);
     if (!should_be_on) {
-        BUZZER_Beep(3000); /* отключение питания */
+        BUZZER_Beep(3000, BUZZER_PRIO_POWEROFF); /* отключение питания */
     }
     s_powered = should_be_on;
 }
