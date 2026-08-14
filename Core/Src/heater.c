@@ -79,6 +79,7 @@ static void PID_Init(PID_t *pid, float kp, float ki, float kd) {
     pid->kd = kd;
     pid->integral      = 0.0f;
     pid->prev_error    = 0.0f;
+    pid->d_filtered    = 0.0f;
     pid->output        = 0.0f;
     pid->integral_limit = 100.0f;   /* % */
 }
@@ -100,22 +101,29 @@ static float PID_Compute(PID_t *pid, float setpoint, float measured) {
 
     float error = setpoint - measured;
 
-    /* 1. Пропорциональная составляющая */
-    float p = (pid->kp / 100.0f) * error;
+    /* 1. Пропорциональная составляющая.
+       pid->kp уже поделена на 100 вызывающей стороной (Channel_Tick_Solder/
+       Desolder передают g_ServiceSettings.KpSolder/100.0f в PID_UpdateCoeffs) —
+       делить здесь ЕЩЁ раз на 100 нельзя, иначе реальный коэффициент
+       окажется в 10000 раз меньше настройки в EEPROM. */
+    float p = pid->kp * error;
 
-    /* 2. Дифференциальная составляющая по ИЗМЕРЕНИЮ с простым фильтром */
-        static float d_filtered = 0.0f;
-        float d_raw = 0.0f;
+    /* 2. Дифференциальная составляющая по ИЗМЕРЕНИЮ с простым фильтром.
+       d_filtered — per-channel состояние (PID_t.d_filtered), не
+       function-static: иначе один и тот же фильтр делился бы между
+       паяльником и отсосом, потому что PID_Compute() — общая функция
+       на оба канала (вызывается из Channel_Tick с разными PID_t*). */
+    float d_raw = 0.0f;
 
-        if (pid->prev_error != 0.0f) {
-            float d_measured = measured - pid->prev_error;
-            d_raw = -(pid->kd / 100.0f) * (d_measured / dt);
-        }
-        pid->prev_error = measured;
+    if (pid->prev_error != 0.0f) {
+        float d_measured = measured - pid->prev_error;
+        d_raw = -pid->kd * (d_measured / dt);
+    }
+    pid->prev_error = measured;
 
-        /* Фильтр низкой частоты (EMA) для сглаживания скачков целых градусов */
-        d_filtered = d_filtered * 0.6f + d_raw * 0.4f;
-        float d = d_filtered;
+    /* Фильтр низкой частоты (EMA) для сглаживания скачков целых градусов */
+    pid->d_filtered = pid->d_filtered * 0.6f + d_raw * 0.4f;
+    float d = pid->d_filtered;
 
     /* 3. Предварительный расчёт без I-составляющей */
     float out_unclamped = p + d;
@@ -123,7 +131,7 @@ static float PID_Compute(PID_t *pid, float setpoint, float measured) {
     /* 4. Интегратор с Anti-Windup и зоной нечувствительности (+/- 3 °C) */
     /* Накопление разрешено только если выход не засыщен и мы близко к уставке */
     if (out_unclamped < 1.0f && out_unclamped > 0.0f && fabsf(error) <= 3.0f) {
-        pid->integral += (pid->ki / 100.0f) * error * dt;
+        pid->integral += pid->ki * error * dt;
     }
 
     /* Жёсткий лимит самого интегратора (не более 30% мощности) */
@@ -144,6 +152,7 @@ static float PID_Compute(PID_t *pid, float setpoint, float measured) {
 static void PID_Reset(PID_t *pid) {
     pid->integral   = 0.0f;
     pid->prev_error = 0.0f;
+    pid->d_filtered = 0.0f;
     pid->output     = 0.0f;
 }
 

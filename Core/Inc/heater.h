@@ -38,7 +38,8 @@
 typedef struct {
     float kp, ki, kd;
     float integral;
-    float prev_error;
+    float prev_error;       /* на деле хранит предыдущее ИЗМЕРЕНИЕ (derivative-on-measurement), не ошибку — см. PID_Compute() */
+    float d_filtered;       /* EMA-фильтр D-составляющей — per-channel, раньше был function-static и делился между паяльником/отсосом */
     float output;           /* 0.0 .. 1.0 */
     float integral_limit;   /* Ограничение интегральной составляющей */
 } PID_t;
