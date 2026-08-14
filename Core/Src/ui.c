@@ -31,6 +31,15 @@ extern uint16_t g_tCurrentDesolder;
 #define UI_INFO_EEPROM_Y   15
 #define UI_INFO_EEPROM_R   6
 
+/* Таймеры сна в инфозоне — иконка "часы" + текст "П 4:30"/"О 12:00".
+   Иконка рисуется примитивами (не через SmartPrint — у неё нет
+   отслеживания старой позиции), поэтому блок целиком очищается
+   фиксированным прямоугольником перед перерисовкой, ширина с запасом
+   под самый длинный правдоподобный текст. */
+#define UI_SLEEP_ICON_R    6
+#define UI_SLEEP_BLOCK_W   70  /* реально измерено: "П 12:00" (макс. текст)
+                                   = 53px + иконка 12px + зазор 4px = 69px */
+
 /* Заголовки окон опущены под инфозону и используют шрифт 16
    (AntiquaB_16_uni: height=18px). */
 #define UI_HEADER_FONT     AntiquaB_16_uni
@@ -53,6 +62,12 @@ static uint8_t g_lastUICursor = 255;
 
 /* Состояние индикатора записи EEPROM в инфозоне (-1 — принудительная перерисовка) */
 static int8_t g_eepromDotPrev = -1;
+
+/* Последняя нарисованная строка блока таймера сна — свой дифф, не
+   через SmartPrint (см. UI_SLEEP_BLOCK_W выше). Пустая строка =
+   блок сейчас не показан (инструмент не в счётчике сна). */
+static char g_sleepBufSolder[12]   = "";
+static char g_sleepBufDesolder[12] = "";
 
 /* ========================================================================== */
 /* Вспомогательные функции (снижение цикломатической сложности)               */
@@ -87,6 +102,59 @@ static void FormatMenuValue(char* out_buf, size_t size, uint8_t idx, bool isSele
  *                      режима/полная перерисовка), нужно перерисовать
  *                      всё содержимое, а не только изменившееся.
  */
+/**
+ * @brief Иконка "часы" — циферблат + две стрелки. Статичная пиктограмма
+ *        (не показывает реальное время суток, просто маркер "таймер").
+ */
+static void DrawClockIcon(uint16_t cx, uint16_t cy, uint16_t r, uint16_t color) {
+    DISPLAY_DrawCircle(cx, cy, r, color);
+    DISPLAY_DrawLine(cx, cy, cx, cy - r + 2, color);                    /* на 12 */
+    DISPLAY_DrawLine(cx, cy, cx + (r * 2) / 3, cy - r / 3, color);      /* на ~2 */
+}
+
+/**
+ * @brief Блок "иконка часов + таймер сна" для одного инструмента,
+ *        правый край блока закреплён в rightEdgeX (растёт влево).
+ *        Перерисовывается только когда текст реально изменился —
+ *        свой дифф через prevBuf, а не SmartPrint (см. UI_SLEEP_BLOCK_W).
+ * @param rightEdgeX  правая граница блока (для паяльника — левее
+ *                    разделительной полосы, для отсоса — край экрана)
+ * @param active      взведён ли счётчик сна у этого инструмента
+ * @param counterTicks  g_SleepCounters.counter{Solder,Desolder} (тики TIM10, 30с)
+ * @param inPresleep  HEATER_GetStatus*().in_presleep — для цвета
+ * @param label       "П" или "О"
+ * @param prevBuf     g_sleepBufSolder / g_sleepBufDesolder
+ */
+static void UI_DrawSleepTimerBlock(uint16_t rightEdgeX, uint16_t y, bool active,
+                                    uint16_t counterTicks, bool inPresleep,
+                                    const char *label, char *prevBuf) {
+    char buf[12];
+
+    if (!active) {
+        if (prevBuf[0] != '\0') {
+            DISPLAY_FillRect(rightEdgeX - UI_SLEEP_BLOCK_W, y - 2,
+                             UI_SLEEP_BLOCK_W, UI_HEADER_FONT.height + 4, BLACK);
+            prevBuf[0] = '\0';
+        }
+        return;
+    }
+
+    uint16_t totalSec = counterTicks * 30;
+    snprintf(buf, 12, "%s %u:%02u", label, totalSec / 60, totalSec % 60);
+    if (strcmp(buf, prevBuf) == 0) return; /* не изменилось — экран не трогаем */
+    strncpy(prevBuf, buf, 11);
+    prevBuf[11] = '\0';
+
+    uint16_t color = inPresleep ? YELLOW : CYAN;
+    uint16_t w     = DISPLAY_GetTextWidth(buf, &UI_HEADER_FONT);
+    uint16_t cy    = y + UI_HEADER_FONT.height / 2;
+
+    DISPLAY_FillRect(rightEdgeX - UI_SLEEP_BLOCK_W, y - 2,
+                     UI_SLEEP_BLOCK_W, UI_HEADER_FONT.height + 4, BLACK);
+    DrawClockIcon(rightEdgeX - w - 4 - UI_SLEEP_ICON_R, cy, UI_SLEEP_ICON_R, color);
+    DISPLAY_Print(rightEdgeX - w, y, buf, &UI_HEADER_FONT, color, BLACK);
+}
+
 static void UI_DrawInfoZone(bool full_redraw) {
     uint16_t sw = DISPLAY_GetWidth();
 
@@ -97,8 +165,13 @@ static void UI_DrawInfoZone(bool full_redraw) {
         DISPLAY_ClearSlot(90); /* иначе после повторного full_redraw с тем же
                                    текстом SmartPrint решит, что рисовать не
                                    надо, хотя пиксели уже стёрты выше */
-        DISPLAY_ClearSlot(40);
-        DISPLAY_ClearSlot(41);
+        /* Форсируем перерисовку блоков таймеров сна — экран уже стёрт
+           в чёрное выше, а собственный дифф (g_sleepBuf*) мог бы
+           решить, что текст не изменился, и пропустить перерисовку.
+           0xFF гарантированно не совпадёт ни с одной настоящей строкой
+           вида "П 4:30". */
+        g_sleepBufSolder[0]   = '\xFF';
+        g_sleepBufDesolder[0] = '\xFF';
     }
 
     /* Индикатор записи EEPROM: горит только в момент реальной отложенной
@@ -123,38 +196,29 @@ static void UI_DrawInfoZone(bool full_redraw) {
                            "Err EEPROM", RED, BLACK, &UI_HEADER_FONT);
     }
 
-    /* Таймеры сна — справа в инфозоне, отдельно на инструмент. Пусто,
-       если инструмент выключен или счётчик не взведён (нечего
-       показывать). Один и тот же g_SleepCounters.counter* используется
-       на обеих ступенях (сначала отсчёт до PreSleep, потом от PreSleep
-       до полного сна) — различаем цветом по HEATER_GetStatus*().in_presleep. */
+    /* Таймеры сна — с иконкой часов, отдельно на инструмент. Паяльник —
+       левее разделительной полосы между окнами (левая половина
+       экрана, там же, где сам инструмент на главном экране), отсос —
+       у правого края, как было изначально. Один и тот же
+       g_SleepCounters.counter* используется на обеих ступенях (сначала
+       отсчёт до PreSleep, потом от PreSleep до полного сна) —
+       различаем цветом по HEATER_GetStatus*().in_presleep. */
     {
-        uint16_t y = UI_INFO_ZONE_H > UI_HEADER_FONT.height
-                   ? (UI_INFO_ZONE_H - UI_HEADER_FONT.height) / 2 : 0;
-        char buf[12];
-        uint16_t rightEdge = sw - 8; /* правая граница следующего непоказанного блока */
+        uint16_t y    = UI_INFO_ZONE_H > UI_HEADER_FONT.height
+                       ? (UI_INFO_ZONE_H - UI_HEADER_FONT.height) / 2 : 0;
+        uint16_t half = sw / 2; /* совпадает с делением колонок на главном экране */
 
-        if (CONFIG_IsSleepCounterActiveSolder()) {
-            uint16_t totalSec = g_SleepCounters.counterSolder * 30;
-            snprintf(buf, sizeof(buf), "П %u:%02u", totalSec / 60, totalSec % 60);
-            uint16_t color = HEATER_GetStatusSolder().in_presleep ? YELLOW : CYAN;
-            uint16_t w = DISPLAY_GetTextWidth(buf, &UI_HEADER_FONT);
-            uint16_t x = rightEdge - w;
-            DISPLAY_SmartPrint(40, x, y, buf, color, BLACK, &UI_HEADER_FONT);
-            rightEdge = x - 10; /* 10px зазор перед следующим блоком слева */
-        } else {
-            DISPLAY_ClearSlot(40);
-        }
+        UI_DrawSleepTimerBlock(half - 8, y,
+                               CONFIG_IsSleepCounterActiveSolder(),
+                               g_SleepCounters.counterSolder,
+                               HEATER_GetStatusSolder().in_presleep,
+                               "П", g_sleepBufSolder);
 
-        if (CONFIG_IsSleepCounterActiveDesolder()) {
-            uint16_t totalSec = g_SleepCounters.counterDesolder * 30;
-            snprintf(buf, sizeof(buf), "О %u:%02u", totalSec / 60, totalSec % 60);
-            uint16_t color = HEATER_GetStatusDesolder().in_presleep ? YELLOW : CYAN;
-            uint16_t w = DISPLAY_GetTextWidth(buf, &UI_HEADER_FONT);
-            DISPLAY_SmartPrint(41, rightEdge - w, y, buf, color, BLACK, &UI_HEADER_FONT);
-        } else {
-            DISPLAY_ClearSlot(41);
-        }
+        UI_DrawSleepTimerBlock(sw - 8, y,
+                               CONFIG_IsSleepCounterActiveDesolder(),
+                               g_SleepCounters.counterDesolder,
+                               HEATER_GetStatusDesolder().in_presleep,
+                               "О", g_sleepBufDesolder);
     }
 }
 
