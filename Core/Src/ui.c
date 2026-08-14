@@ -21,9 +21,7 @@ extern uint16_t g_tCurrentDesolder;
 /* Настройки интерфейса — вычисляются из размеров дисплея при первом вызове */
 #define UI_MARGIN_LEFT     10
 
-/* Инфозона — верхняя полоса дисплея под системные индикаторы
-   (запись EEPROM, позже — таймеры сна и т.п.). Разделительная
-   линия рисуется по её нижней границе (y = UI_INFO_ZONE_H - 1). */
+/* Инфозона — верхняя полоса дисплея под системные индикаторы */
 #define UI_INFO_ZONE_H     30
 
 /* Индикатор записи EEPROM — кружок в инфозоне */
@@ -31,24 +29,16 @@ extern uint16_t g_tCurrentDesolder;
 #define UI_INFO_EEPROM_Y   15
 #define UI_INFO_EEPROM_R   6
 
-/* Таймеры сна в инфозоне — иконка "часы" + текст "П 4:30"/"О 12:00".
-   Иконка рисуется примитивами (не через SmartPrint — у неё нет
-   отслеживания старой позиции), поэтому блок целиком очищается
-   фиксированным прямоугольником перед перерисовкой, ширина с запасом
-   под самый длинный правдоподобный текст. */
+/* Таймеры сна в инфозоне */
 #define UI_SLEEP_ICON_R    6
-#define UI_SLEEP_BLOCK_W   70  /* реально измерено: "П 12:00" (макс. текст)
-                                   = 53px + иконка 12px + зазор 4px = 69px */
+#define UI_SLEEP_BLOCK_W   70
 
-/* Заголовки окон опущены под инфозону и используют шрифт 16
-   (AntiquaB_16_uni: height=18px). */
+/* Заголовки окон */
 #define UI_HEADER_FONT     AntiquaB_16_uni
 #define UI_HEADER_TEXT_Y   (UI_INFO_ZONE_H + 3)
-#define UI_HEADER_ROW_H    22   /* 18px шрифт + отступы сверху/снизу */
+#define UI_HEADER_ROW_H    22
 
-/* Шрифт меню — высота глифа определяет строку.
-   AntiquaB_24: height≈28px, добавляем 7px зазора = 35px.
-   Если сменить шрифт — поменять только здесь. */
+/* Шрифт меню */
 #define UI_FONT_H          28
 #define UI_LINE_GAP        7
 #define UI_LINE_HEIGHT     (UI_FONT_H + UI_LINE_GAP)
@@ -63,68 +53,46 @@ static uint8_t g_lastUICursor = 255;
 /* Состояние индикатора записи EEPROM в инфозоне (-1 — принудительная перерисовка) */
 static int8_t g_eepromDotPrev = -1;
 
-/* Последняя нарисованная строка блока таймера сна — свой дифф, не
-   через SmartPrint (см. UI_SLEEP_BLOCK_W выше). Пустая строка =
-   блок сейчас не показан (инструмент не в счётчике сна). */
+/* Последняя нарисованная строка блока таймера сна */
 static char g_sleepBufSolder[12]   = "";
 static char g_sleepBufDesolder[12] = "";
 
+/* Статические переменные меню (вынесены для сброса при смене режима) */
+static uint8_t svc_top          = 0;
+static uint8_t svc_prev         = 255;
+static bool    svc_rendered     = false;
+static bool    svc_was_editing  = false;
+static char    svc_prev_val[16] = {0};
+
+static uint8_t expert_top          = 0;
+static uint8_t last_expert_cursor = 255;
+static bool    exp_rendered        = false;
+static bool    exp_was_editing     = false;
+static char    exp_prev_val[16]    = {0};
+
 /* ========================================================================== */
-/* Вспомогательные функции (снижение цикломатической сложности)               */
+/* Вспомогательные функции                                                    */
 /* ========================================================================== */
 
-/**
- * @brief Подготовка строки значения для пункта меню
- */
 static void FormatMenuValue(char* out_buf, size_t size, uint8_t idx, bool isSelected, bool isEditing) {
     const char* label = STATE_GetItemLabel(idx);
 
-    // Специальная обработка для пункта Expert
     if (strcmp(label, "Expert") == 0) {
         snprintf(out_buf, size, STATE_IsExpertWarn() ? "!! EXPERT !!" : "Expert");
         return;
     }
 
     uint16_t val = STATE_GetItemValue(idx);
-
-    // Выбор формата: с рамками при редактировании или обычный
     const char* fmt = (isEditing && isSelected) ? "[%3u]" : " %3u ";
     snprintf(out_buf, size, fmt, val);
 }
 
-/**
- * @brief Отрисовка инфозоны (верхние 30px экрана).
- *
- * Рисуется на каждом проходе UI_UpdateLoop, независимо от текущего
- * режима — индикаторы должны быть видны всегда, поверх любого экрана.
- *
- * @param full_redraw  true — фон и рамка инфозоны были стёрты (смена
- *                      режима/полная перерисовка), нужно перерисовать
- *                      всё содержимое, а не только изменившееся.
- */
-/**
- * @brief Иконка "часы" — циферблат + две стрелки. Статичная пиктограмма
- *        (не показывает реальное время суток, просто маркер "таймер").
- */
 static void DrawClockIcon(uint16_t cx, uint16_t cy, uint16_t r, uint16_t color) {
     DISPLAY_DrawCircle(cx, cy, r, color);
-    DISPLAY_DrawLine(cx, cy, cx, cy - r + 2, color);                    /* на 12 */
-    DISPLAY_DrawLine(cx, cy, cx + (r * 2) / 3, cy - r / 3, color);      /* на ~2 */
+    DISPLAY_DrawLine(cx, cy, cx, cy - r + 2, color);
+    DISPLAY_DrawLine(cx, cy, cx + (r * 2) / 3, cy - r / 3, color);
 }
 
-/**
- * @brief Блок "иконка часов + таймер сна" для одного инструмента,
- *        правый край блока закреплён в rightEdgeX (растёт влево).
- *        Перерисовывается только когда текст реально изменился —
- *        свой дифф через prevBuf, а не SmartPrint (см. UI_SLEEP_BLOCK_W).
- * @param rightEdgeX  правая граница блока (для паяльника — левее
- *                    разделительной полосы, для отсоса — край экрана)
- * @param active      взведён ли счётчик сна у этого инструмента
- * @param counterTicks  g_SleepCounters.counter{Solder,Desolder} (тики TIM10, 30с)
- * @param inPresleep  HEATER_GetStatus*().in_presleep — для цвета
- * @param label       "П" или "О"
- * @param prevBuf     g_sleepBufSolder / g_sleepBufDesolder
- */
 static void UI_DrawSleepTimerBlock(uint16_t rightEdgeX, uint16_t y, bool active,
                                     uint16_t counterTicks, bool inPresleep,
                                     const char *label, char *prevBuf) {
@@ -141,7 +109,7 @@ static void UI_DrawSleepTimerBlock(uint16_t rightEdgeX, uint16_t y, bool active,
 
     uint16_t totalSec = counterTicks * 30;
     snprintf(buf, 12, "%s %u:%02u", label, totalSec / 60, totalSec % 60);
-    if (strcmp(buf, prevBuf) == 0) return; /* не изменилось — экран не трогаем */
+    if (strcmp(buf, prevBuf) == 0) return;
     strncpy(prevBuf, buf, 11);
     prevBuf[11] = '\0';
 
@@ -161,24 +129,12 @@ static void UI_DrawInfoZone(bool full_redraw) {
     if (full_redraw) {
         DISPLAY_FillRect(0, 0, sw, UI_INFO_ZONE_H, BLACK);
         DISPLAY_FillRect(0, UI_INFO_ZONE_H - 1, sw, 1, GRAY);
-        g_eepromDotPrev = -1; /* форсируем перерисовку индикатора ниже */
-        DISPLAY_ClearSlot(90); /* иначе после повторного full_redraw с тем же
-                                   текстом SmartPrint решит, что рисовать не
-                                   надо, хотя пиксели уже стёрты выше */
-        /* Форсируем перерисовку блоков таймеров сна — экран уже стёрт
-           в чёрное выше, а собственный дифф (g_sleepBuf*) мог бы
-           решить, что текст не изменился, и пропустить перерисовку.
-           0xFF гарантированно не совпадёт ни с одной настоящей строкой
-           вида "П 4:30". */
+        g_eepromDotPrev = -1;
+        DISPLAY_ClearSlot(90);
         g_sleepBufSolder[0]   = '\xFF';
         g_sleepBufDesolder[0] = '\xFF';
     }
 
-    /* Индикатор записи EEPROM: горит только в момент реальной отложенной
-       записи (после того как истёк дебаунс g_SaveDelayCounter и
-       CONFIG_SaveToEEPROM() реально что-то записала), с удержанием на
-       EEPROM_FLASH_MS реального времени — иначе сама запись длится доли
-       миллисекунды и физически не видна на экране. Выставляется в main.c. */
     bool dot_on = ((int32_t)(g_EepromFlashUntil - HAL_GetTick()) > 0);
     if ((int8_t)dot_on != g_eepromDotPrev) {
         DISPLAY_FillCircle(UI_INFO_EEPROM_X, UI_INFO_EEPROM_Y, UI_INFO_EEPROM_R,
@@ -186,9 +142,6 @@ static void UI_DrawInfoZone(bool full_redraw) {
         g_eepromDotPrev = dot_on;
     }
 
-    /* Неисправность EEPROM — залипающая до перезагрузки (см. eeprom_i2c.c),
-       поэтому просто рисуем один раз и оставляем: SmartPrint сам не будет
-       перерисовывать неизменившийся текст. */
     if (g_EepromFault) {
         uint16_t y = UI_INFO_ZONE_H > UI_HEADER_FONT.height
                    ? (UI_INFO_ZONE_H - UI_HEADER_FONT.height) / 2 : 0;
@@ -196,17 +149,10 @@ static void UI_DrawInfoZone(bool full_redraw) {
                            "Err EEPROM", RED, BLACK, &UI_HEADER_FONT);
     }
 
-    /* Таймеры сна — с иконкой часов, отдельно на инструмент. Паяльник —
-       левее разделительной полосы между окнами (левая половина
-       экрана, там же, где сам инструмент на главном экране), отсос —
-       у правого края, как было изначально. Один и тот же
-       g_SleepCounters.counter* используется на обеих ступенях (сначала
-       отсчёт до PreSleep, потом от PreSleep до полного сна) —
-       различаем цветом по HEATER_GetStatus*().in_presleep. */
     {
         uint16_t y    = UI_INFO_ZONE_H > UI_HEADER_FONT.height
                        ? (UI_INFO_ZONE_H - UI_HEADER_FONT.height) / 2 : 0;
-        uint16_t half = sw / 2; /* совпадает с делением колонок на главном экране */
+        uint16_t half = sw / 2;
 
         UI_DrawSleepTimerBlock(half - 8, y,
                                CONFIG_IsSleepCounterActiveSolder(),
@@ -230,22 +176,18 @@ void UI_DrawExpertWarn(void) {
     uint16_t sw = DISPLAY_GetWidth();
     uint16_t sh = DISPLAY_GetHeight();
 
-    /* Рамка */
     DISPLAY_DrawRect(4, 35, sw - 8, sh - 40, YELLOW);
 
-    /* Заголовок */
     const char *hdr = "!! ВНИМАНИЕ !!";
     uint16_t hw = DISPLAY_GetTextWidth(hdr, &AntiquaB_24_uni);
     DISPLAY_Print((sw - hw) / 2, 42, hdr, &AntiquaB_24_uni, RED, BLACK);
 
-    /* Текст предупреждения */
     DISPLAY_Print(10, 80,  "Режим требует", &AntiquaB_18_uni, YELLOW, BLACK);
     DISPLAY_Print(10, 105, "квалификации!", &AntiquaB_18_uni, YELLOW, BLACK);
     DISPLAY_Print(10, 135, "Неверные настройки", &AntiquaB_18_uni, WHITE, BLACK);
     DISPLAY_Print(10, 158, "могут повредить", &AntiquaB_18_uni, WHITE, BLACK);
     DISPLAY_Print(10, 181, "инструмент.", &AntiquaB_18_uni, WHITE, BLACK);
 
-    /* Подсказка */
     const char *hint = "SET2 long = войти";
     uint16_t yw = DISPLAY_GetTextWidth(hint, &AntiquaB_18_uni);
     DISPLAY_Print((sw - yw) / 2, 210, hint, &AntiquaB_18_uni, CYAN, BLACK);
@@ -260,22 +202,11 @@ void UI_DrawExpertMenu(void) {
 
     uint8_t visible = (uint8_t)((sh - UI_MENU_START_Y) / UI_LINE_HEIGHT);
 
-    static uint8_t expert_top      = 0;
-    static uint8_t last_expert_cursor = 255;
-    static bool    exp_rendered    = false;
-    static bool    exp_was_editing = false;
-    static char    exp_prev_val[16] = {0};
-
     uint8_t prevTop = expert_top;
     if (cursor < expert_top) expert_top = cursor;
     if (cursor >= expert_top + visible) expert_top = cursor - visible + 1;
     bool scrolled = (expert_top != prevTop);
 
-    /* STATE_CheckAndResetUINeedsClear() уже вызван и потреблён в
-       UI_UpdateLoop() до диспетчеризации сюда — здесь он всегда вернул
-       бы false. g_forceFullRedraw несёт тот же сигнал (выставляется
-       UI_UpdateLoop при смене режима). Раньше тут был повторный вызов
-       — мёртвый код. */
     bool full_redraw  = g_forceFullRedraw || scrolled;
     bool cursor_moved = (cursor != last_expert_cursor);
     bool edit_changed = (isEditing != exp_was_editing);
@@ -284,11 +215,13 @@ void UI_DrawExpertMenu(void) {
     if (isEditing) snprintf(cur_val, sizeof(cur_val), "[%4u]", STATE_GetExpertItemValue(cursor));
     bool value_changed = (isEditing && strcmp(cur_val, exp_prev_val) != 0);
 
-    /* Ничего не изменилось — выходим */
     if (!full_redraw && !cursor_moved && !edit_changed && !value_changed && exp_rendered) return;
 
-    if (full_redraw) {
+    if (scrolled) {
         DISPLAY_FillRect(0, UI_MENU_START_Y, sw, sh - UI_MENU_START_Y, BLACK);
+    }
+
+    if (full_redraw) {
         for (uint8_t vi = 0; vi < visible; vi++) {
             uint8_t idx = expert_top + vi;
             if (idx >= total) break;
@@ -328,7 +261,6 @@ void UI_DrawExpertMenu(void) {
     }
 
     last_expert_cursor = cursor;
-    g_forceFullRedraw  = false;
     exp_rendered       = true;
     exp_was_editing    = isEditing;
     if (isEditing) strncpy(exp_prev_val, cur_val, sizeof(exp_prev_val)-1);
@@ -352,8 +284,6 @@ void UI_DrawHeader(void) {
         titleColor = CYAN;
     }
 
-    /* Разделительная линия под инфозоной рисуется в UI_DrawInfoZone() */
-
     uint16_t tw = DISPLAY_GetTextWidth(title, &UI_HEADER_FONT);
     uint16_t x_pos = (sw > tw) ? (sw - tw) / 2 : 0;
 
@@ -369,23 +299,11 @@ void UI_DrawServiceMenu(void) {
 
     uint8_t visible = (uint8_t)((sh - UI_MENU_START_Y) / UI_LINE_HEIGHT);
 
-    static uint8_t svc_top      = 0;
-    static uint8_t svc_prev     = 255;
-    static bool    svc_rendered = false;
-    static bool    svc_was_editing = false;
-    static char    svc_prev_val[16] = {0};
-
     uint8_t prevTop = svc_top;
     if (cursor < svc_top) svc_top = cursor;
     if (cursor >= svc_top + visible) svc_top = cursor - visible + 1;
     bool scrolled = (svc_top != prevTop);
 
-    /* g_UI_NeedsClear уже потреблён и сброшен в UI_UpdateLoop() до
-       диспетчеризации сюда — здесь он всегда false. g_forceFullRedraw
-       несёт тот же сигнал. Раньше тут читался тот же флаг напрямую —
-       мёртвая проверка, разошедшаяся с UI_DrawExpertMenu (там был
-       повторный вызов STATE_CheckAndResetUINeedsClear() — тоже мёртвый,
-       см. правку там же). */
     bool full_redraw  = (g_forceFullRedraw || scrolled);
     bool cursor_moved = (cursor != svc_prev);
     bool edit_changed = (isEditing != svc_was_editing);
@@ -396,12 +314,14 @@ void UI_DrawServiceMenu(void) {
 
     if (!full_redraw && !cursor_moved && !edit_changed && !value_changed && svc_rendered) return;
 
-    if (full_redraw) {
+    if (scrolled) {
         DISPLAY_FillRect(0, UI_MENU_START_Y, sw, sh - UI_MENU_START_Y, BLACK);
+    }
+
+    if (full_redraw) {
         DISPLAY_ClearAllSlots();
-        g_forceFullRedraw = false;
-        svc_prev          = 255;
-        svc_rendered      = false;
+        svc_prev     = 255;
+        svc_rendered = false;
     }
 
     for (uint8_t vi = 0; vi < visible; vi++) {
@@ -411,23 +331,19 @@ void UI_DrawServiceMenu(void) {
         bool isSelected = (i == cursor);
         bool wasPrev    = (i == svc_prev);
 
-        /* Перерисовываем только изменившиеся строки */
         if (!full_redraw && !isSelected && !wasPrev) continue;
 
         uint16_t y        = UI_MENU_START_Y + vi * UI_LINE_HEIGHT;
         uint16_t bgColor  = isSelected ? DARK_GRAY : BLACK;
         uint16_t txtColor = isSelected ? (isEditing ? GREEN : CYAN) : WHITE;
 
-        /* Фон + сброс слотов чтобы SmartPrint перерисовал текст */
         DISPLAY_FillRect(0, y - 2, sw, UI_LINE_HEIGHT, bgColor);
         DISPLAY_ClearSlot(1 + i);
         DISPLAY_ClearSlot(20 + i);
 
-        /* Лейбл */
         DISPLAY_SmartPrint(1 + i, UI_MARGIN_LEFT, y,
                            STATE_GetItemLabel(i), txtColor, bgColor, &AntiquaB_24_uni);
 
-        /* Значение */
         if (STATE_IsServiceItemAction(i)) continue;
 
         FormatMenuValue(buf, sizeof(buf), i, isSelected, isEditing);
@@ -443,33 +359,14 @@ void UI_DrawServiceMenu(void) {
     else svc_prev_val[0] = 0;
 }
 
-
-/**
- * @brief Отрисовка одной колонки главного экрана (паяльник или отсос).
- * @param x0                Левая граница колонки в пикселях
- * @param w                 Ширина колонки в пикселях
- * @param is_solder         true — это колонка паяльника, false — отсоса
- * @param active_tool_is_solder  true, если сейчас выбран (активен) паяльник
- * @param fault             Состояние RTD/подключения этого инструмента
- * @param enabled           Статус вкл/выкл (см. g_WorkFlags.pwrIsOn*, COMMANDS_TogglePower)
- * @param force_clear       true — физически стереть зону температуры перед
- *                           отрисовкой (смена типа содержимого: цифры /
- *                           "неисправно" / "ВЫКЛ" / пусто — иначе могут
- *                           остаться огрызки старого содержимого)
- */
 static void UI_DrawToolColumn(uint16_t x0, uint16_t w, bool is_solder,
                                bool active_tool_is_solder,
                                RtdFault_t fault, bool enabled, bool force_clear) {
     uint16_t sh = DISPLAY_GetHeight();
     bool active = (is_solder == active_tool_is_solder);
     bool ok     = (fault == RTD_OK);
-    /* "Неисправно" — любое состояние, кроме RTD_OK и "не подключен".
-       RTD_NOT_CONNECTED — единственный случай, когда просто пусто. */
     bool faulty = !ok && (fault != RTD_NOT_CONNECTED);
 
-    /* Неисправность/отключение — заголовок красным вне зависимости от
-       того, активен ли сейчас этот инструмент. Иначе — обычная логика
-       активный/неактивный (серый). */
     uint16_t labelColor   = !ok ? RED : (active ? CYAN : GRAY);
     uint16_t tempColor    = active ? WHITE : GRAY;
     uint16_t setColor     = active ? GREEN : GRAY;
@@ -478,51 +375,37 @@ static void UI_DrawToolColumn(uint16_t x0, uint16_t w, bool is_solder,
     uint8_t slotTemp    = is_solder ? 11 : 61;
     uint8_t slotSet     = is_solder ? 12 : 62;
 
-    /* Подпись окна — под инфозоной, шрифт 16px */
     const char *label = is_solder ? "ПАЯЛЬНИК" : "ОТСОС";
     uint16_t lw = DISPLAY_GetTextWidth(label, &UI_HEADER_FONT);
     uint16_t lx = x0 + (w > lw ? (w - lw) / 2 : 0);
     DISPLAY_SmartPrint(slotLabel, lx, UI_HEADER_TEXT_Y, label, labelColor, BLACK, &UI_HEADER_FONT);
 
     const uint16_t topAvail    = UI_MENU_START_Y;
-    const uint16_t bottomZoneH = 74; /* резерв под "Уст" + общую строку пресетов */
+    const uint16_t bottomZoneH = 74;
     uint16_t bottomAvail = (sh > bottomZoneH) ? (sh - bottomZoneH) : topAvail;
     uint16_t availH = (bottomAvail > topAvail) ? (bottomAvail - topAvail) : 0;
 
-    if (force_clear && availH > 0) {
-        /* Тип содержимого этой зоны мог смениться (цифры <-> "неисправно"
-           <-> пусто) — SmartPrint сравнивает только текст, так что старое
-           содержимое иначе может остаться видно рядом с новым. */
+    if (force_clear && !g_forceFullRedraw && availH > 0) {
         DISPLAY_FillRect(x0, topAvail, w, availH, BLACK);
     }
 
     if (!ok) {
         if (faulty) {
-            /* Инструмент подключен (Test=1), но RTD неисправен */
             const char *msg = "неисправно";
             uint16_t mw = DISPLAY_GetTextWidth(msg, &UI_HEADER_FONT);
             uint16_t mx = x0 + (w > mw ? (w - mw) / 2 : 0);
             uint16_t my = topAvail + ((availH > UI_HEADER_FONT.height) ? (availH - UI_HEADER_FONT.height) / 2 : 0);
             DISPLAY_SmartPrint(slotTemp, mx, my, msg, RED, BLACK, &UI_HEADER_FONT);
         } else {
-            /* Не подключен — показания ADS1220 не выводим (пусто).
-               Инвалидируем кэш слота: иначе после переподключения с
-               тем же числом, что было до отключения, SmartPrint решит,
-               что рисовать не надо, хотя пиксели уже стёрты выше. */
             DISPLAY_ClearSlot(slotTemp);
         }
     } else if (!enabled) {
-        /* Инструмент исправен, но выключен пользователем (аккорд UP+DN) —
-           вместо температуры крупно "ВЫКЛ". Шрифта 32px в проекте нет —
-           ближайший доступный с кириллицей: AntiquaB_24_uni. */
         const char *msg = "ВЫКЛ";
         uint16_t mw = DISPLAY_GetTextWidth(msg, &AntiquaB_24_uni);
         uint16_t mx = x0 + (w > mw ? (w - mw) / 2 : 0);
         uint16_t my = topAvail + ((availH > AntiquaB_24_uni.height) ? (availH - AntiquaB_24_uni.height) / 2 : 0);
         DISPLAY_SmartPrint(slotTemp, mx, my, msg, tempColor, BLACK, &AntiquaB_24_uni);
     } else {
-        /* Текущая температура — по вертикали центрируется в зоне между
-           строкой заголовка и блоком уставки внизу */
         int16_t cur = is_solder ? g_tCurrentSolder : g_tCurrentDesolder;
         snprintf(buf, sizeof(buf), "%3u", (uint16_t)cur);
         uint16_t tw = DISPLAY_GetTextWidth(buf, &Comic_60_dig);
@@ -531,7 +414,6 @@ static void UI_DrawToolColumn(uint16_t x0, uint16_t w, bool is_solder,
         DISPLAY_SmartPrint(slotTemp, tx, ty, buf, tempColor, BLACK, &Comic_60_dig);
     }
 
-    /* Уставка — своя для каждого инструмента */
     uint16_t set = is_solder ? g_TempSettings.targetSetSolder : g_TempSettings.targetSetDesolder;
     snprintf(buf, sizeof(buf), "Уст %3u", set);
     uint16_t sw2 = DISPLAY_GetTextWidth(buf, &AntiquaB_24_uni);
@@ -540,12 +422,6 @@ static void UI_DrawToolColumn(uint16_t x0, uint16_t w, bool is_solder,
     DISPLAY_SmartPrint(slotSet, sx, sy, buf, setColor, BLACK, &AntiquaB_24_uni);
 }
 
-/**
- * @brief Отрисовка общей строки пресетов SET1-3 (на всю ширину экрана,
- *        одна на оба инструмента — показывает пресеты активного инструмента).
- *        Не делится вертикальной полосой между окнами.
- * @param active_is_solder  true — показать пресеты паяльника, иначе отсоса
- */
 static void UI_DrawSharedPresetRow(bool active_is_solder) {
     uint16_t sw = DISPLAY_GetWidth();
     uint16_t sh = DISPLAY_GetHeight();
@@ -574,19 +450,12 @@ void UI_DrawMainScreen(void) {
     uint16_t sh   = DISPLAY_GetHeight();
     uint16_t half = sw / 2;
 
-    bool tool_now = g_WorkFlags.tool; /* true = активен паяльник */
+    bool tool_now = g_WorkFlags.tool;
     RtdFault_t solderFault   = HEATER_GetStatusSolder().rtd_fault;
     RtdFault_t desolderFault = HEATER_GetStatusDesolder().rtd_fault;
     bool solderEnabled   = g_WorkFlags.pwrIsOnSolder;
     bool desolderEnabled = g_WorkFlags.pwrIsOnVac;
 
-    /* Полная перерисовка обеих колонок нужна при: смене активного
-       инструмента (перекраска active/inactive), смене состояния
-       неисправности или вкл/выкл любого из инструментов (тип
-       содержимого меняется: цифры/"неисправно"/"ВЫКЛ"/пусто) или
-       общей полной перерисовке экрана. SmartPrint сравнивает только
-       текст, а не цвет, поэтому без сброса слотов перекраска была бы
-       пропущена. */
     bool fault_changed   = (solderFault != solderFaultPrev) || (desolderFault != desolderFaultPrev);
     bool enabled_changed = (solderEnabled != solderEnabledPrev) || (desolderEnabled != desolderEnabledPrev);
     bool need_reset = tool_now != tool_prev || g_forceFullRedraw || fault_changed || enabled_changed;
@@ -601,16 +470,6 @@ void UI_DrawMainScreen(void) {
     UI_DrawToolColumn(half, sw - half, false, tool_now, desolderFault, desolderEnabled, need_reset);
     UI_DrawSharedPresetRow(tool_now);
 
-    /* Разделительные линии — рисуем ПОСЛЕ колонок, не до. Горизонтальная
-       под инфозоной уже рисуется в UI_DrawInfoZone(). Вертикальная —
-       между окнами, не заходит в инфозону (сверху) и в общую строку
-       пресетов SET1-3 (снизу).
-       ВАЖНО: если рисовать полосу ДО колонок, то FillRect(BLACK) правой
-       колонки в UI_DrawToolColumn (она начинается ровно с x=half, а
-       полоса шириной 2px занимает [half-1, half+1)) тут же перекрывает
-       её в том же самом кадре — полоса рисуется и сразу стирается,
-       визуально пропадает или мигает. Рисуя её последней, ничто её
-       больше не перекрывает. */
     if (need_reset) {
         uint16_t presetY = (sh > 35) ? (sh - 35) : UI_MENU_START_Y;
         uint16_t vTop    = UI_INFO_ZONE_H;
@@ -623,14 +482,15 @@ void UI_DrawMainScreen(void) {
     desolderFaultPrev   = desolderFault;
     solderEnabledPrev   = solderEnabled;
     desolderEnabledPrev = desolderEnabled;
-    g_forceFullRedraw    = false;
 }
 
 void UI_UpdateLoop(void) {
     SystemMode_t mode = STATE_GetMode();
 
-    /* Полная перерисовка при смене режима */
-    bool mode_changed = (mode != g_prevMode) || STATE_CheckAndResetUINeedsClear();
+    /* Считываем флаг из state.c строго один раз */
+    bool needs_clear = STATE_CheckAndResetUINeedsClear();
+    bool mode_changed = (mode != g_prevMode) || needs_clear;
+
     if (mode_changed) {
         DISPLAY_FillScreen(BLACK);
         DISPLAY_ClearAllSlots();
@@ -638,15 +498,24 @@ void UI_UpdateLoop(void) {
         g_lastUICursor = 255;
         g_forceFullRedraw = true;
 
+        /* Сбрасываем внутренние состояния подсистем меню */
+        svc_top = 0;
+        svc_prev = 255;
+        svc_rendered = false;
+        svc_was_editing = false;
+        svc_prev_val[0] = 0;
+
+        expert_top = 0;
+        last_expert_cursor = 255;
+        exp_rendered = false;
+        exp_was_editing = false;
+        exp_prev_val[0] = 0;
+
         g_prevMode = mode;
     }
 
-    /* Инфозона (индикаторы) рисуется на каждом проходе, поверх
-       любого режима — включая экран EXPERT_WARN. */
     UI_DrawInfoZone(mode_changed);
 
-    /* Заголовок — только для не-warn и не-главных режимов:
-       у главного экрана теперь своя подпись в каждом окне */
     if (mode_changed && mode != SYS_MODE_EXPERT_WARN &&
         mode != SYS_MODE_MAIN_SOLDER && mode != SYS_MODE_MAIN_DESOLDER) {
         UI_DrawHeader();
@@ -661,4 +530,7 @@ void UI_UpdateLoop(void) {
     } else {
         UI_DrawMainScreen();
     }
+
+    /* Флаг сбрасывается в самом конце единого цикла */
+    g_forceFullRedraw = false;
 }
