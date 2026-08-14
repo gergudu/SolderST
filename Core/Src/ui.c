@@ -525,10 +525,10 @@ static void UI_DrawToolColumn(uint16_t x0, uint16_t w, bool is_solder,
            строкой заголовка и блоком уставки внизу */
         int16_t cur = is_solder ? g_tCurrentSolder : g_tCurrentDesolder;
         snprintf(buf, sizeof(buf), "%3u", (uint16_t)cur);
-        uint16_t tw = DISPLAY_GetTextWidth(buf, &Comic_40_dig);
+        uint16_t tw = DISPLAY_GetTextWidth(buf, &Comic_60_dig);
         uint16_t tx = x0 + (w > tw ? (w - tw) / 2 : 0);
-        uint16_t ty = topAvail + ((availH > Comic_40_dig.height) ? (availH - Comic_40_dig.height) / 2 : 0);
-        DISPLAY_SmartPrint(slotTemp, tx, ty, buf, tempColor, BLACK, &Comic_40_dig);
+        uint16_t ty = topAvail + ((availH > Comic_60_dig.height) ? (availH - Comic_60_dig.height) / 2 : 0);
+        DISPLAY_SmartPrint(slotTemp, tx, ty, buf, tempColor, BLACK, &Comic_60_dig);
     }
 
     /* Уставка — своя для каждого инструмента */

@@ -30,6 +30,7 @@
 #include "tim.h"
 #include "buzzer.h"
 #include <string.h>
+#include <math.h>
 
 /* =========================================================================
  * Внутренние типы
@@ -89,34 +90,50 @@ static void PID_UpdateCoeffs(PID_t *pid, float kp, float ki, float kd) {
 }
 
 /**
- * @brief Один шаг ПИД. dt = PID_PERIOD_TICKS / HEATER_TIM_FREQ_HZ = 0.1 сек.
- * @param setpoint  Уставка, °С
- * @param measured  Измеренная температура, °С
- * @return output   0.0 .. 1.0
+ * @brief Пересчёт ПИД-регулятора. Вызывается каждые PID_PERIOD_TICKS (0.1 сек).
+ * @param setpoint  Целевая температура, °C
+ * @param measured  Измеренная температура с RTD, °C
+ * @return output   ШИМ-выход от 0.0 (0%) до 1.0 (100%)
  */
 static float PID_Compute(PID_t *pid, float setpoint, float measured) {
-    const float dt = (float)PID_PERIOD_TICKS / (float)HEATER_TIM_FREQ_HZ;
+    const float dt = (float)PID_PERIOD_TICKS / (float)HEATER_TIM_FREQ_HZ; /* 0.1 сек */
 
     float error = setpoint - measured;
 
-    /* Пропорциональная */
-    float p = pid->kp * error;
+    /* 1. Пропорциональная составляющая */
+    float p = (pid->kp / 100.0f) * error;
 
-    /* Интегральная с ограничением (anti-windup) */
-    pid->integral += pid->ki * error * dt;
-    if (pid->integral >  pid->integral_limit) pid->integral =  pid->integral_limit;
-    if (pid->integral < -pid->integral_limit) pid->integral = -pid->integral_limit;
+    /* 2. Дифференциальная составляющая по ИЗМЕРЕНИЮ с простым фильтром */
+        static float d_filtered = 0.0f;
+        float d_raw = 0.0f;
 
-    /* Дифференциальная */
-    float d = pid->kd * (error - pid->prev_error) / dt;
-    pid->prev_error = error;
+        if (pid->prev_error != 0.0f) {
+            float d_measured = measured - pid->prev_error;
+            d_raw = -(pid->kd / 100.0f) * (d_measured / dt);
+        }
+        pid->prev_error = measured;
 
-    float out = p + pid->integral + d;
+        /* Фильтр низкой частоты (EMA) для сглаживания скачков целых градусов */
+        d_filtered = d_filtered * 0.6f + d_raw * 0.4f;
+        float d = d_filtered;
 
-    /* Нормировка: считаем что kp*100 = 100% при ошибке 100°С */
-    out /= 100.0f;
+    /* 3. Предварительный расчёт без I-составляющей */
+    float out_unclamped = p + d;
 
-    /* Clamp 0..1 */
+    /* 4. Интегратор с Anti-Windup и зоной нечувствительности (+/- 3 °C) */
+    /* Накопление разрешено только если выход не засыщен и мы близко к уставке */
+    if (out_unclamped < 1.0f && out_unclamped > 0.0f && fabsf(error) <= 3.0f) {
+        pid->integral += (pid->ki / 100.0f) * error * dt;
+    }
+
+    /* Жёсткий лимит самого интегратора (не более 30% мощности) */
+    if (pid->integral > 0.3f)  pid->integral = 0.3f;
+    if (pid->integral < 0.0f)  pid->integral = 0.0f;
+
+    /* 5. Суммарный выход */
+    float out = out_unclamped + pid->integral;
+
+    /* 6. Ограничение ШИМ от 0.0 до 1.0 */
     if (out < 0.0f) out = 0.0f;
     if (out > 1.0f) out = 1.0f;
 
