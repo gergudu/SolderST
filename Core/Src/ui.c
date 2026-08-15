@@ -95,7 +95,7 @@ static void DrawClockIcon(uint16_t cx, uint16_t cy, uint16_t r, uint16_t color) 
 
 static void UI_DrawSleepTimerBlock(uint16_t rightEdgeX, uint16_t y, bool active,
                                     uint16_t counterTicks, bool inPresleep,
-                                    const char *label, char *prevBuf) {
+                                    char *prevBuf) {
     char buf[12];
 
     if (!active) {
@@ -108,7 +108,8 @@ static void UI_DrawSleepTimerBlock(uint16_t rightEdgeX, uint16_t y, bool active,
     }
 
     uint16_t totalSec = counterTicks * 30;
-    snprintf(buf, 12, "%s %u:%02u", label, totalSec / 60, totalSec % 60);
+    snprintf(buf, sizeof(buf), "%u:%02u", totalSec / 60, totalSec % 60);
+
     if (strcmp(buf, prevBuf) == 0) return;
     strncpy(prevBuf, buf, 11);
     prevBuf[11] = '\0';
@@ -119,7 +120,9 @@ static void UI_DrawSleepTimerBlock(uint16_t rightEdgeX, uint16_t y, bool active,
 
     DISPLAY_FillRect(rightEdgeX - UI_SLEEP_BLOCK_W, y - 2,
                      UI_SLEEP_BLOCK_W, UI_HEADER_FONT.height + 4, BLACK);
-    DrawClockIcon(rightEdgeX - w - 4 - UI_SLEEP_ICON_R, cy, UI_SLEEP_ICON_R, color);
+
+    /* Сдвиг циферблата на 3px вверх (cy - 3) */
+    DrawClockIcon(rightEdgeX - w - 4 - UI_SLEEP_ICON_R, cy - 3, UI_SLEEP_ICON_R, color);
     DISPLAY_Print(rightEdgeX - w, y, buf, &UI_HEADER_FONT, color, BLACK);
 }
 
@@ -158,13 +161,13 @@ static void UI_DrawInfoZone(bool full_redraw) {
                                CONFIG_IsSleepCounterActiveSolder(),
                                g_SleepCounters.counterSolder,
                                HEATER_GetStatusSolder().in_presleep,
-                               "П", g_sleepBufSolder);
+                               g_sleepBufSolder);
 
         UI_DrawSleepTimerBlock(sw - 8, y,
                                CONFIG_IsSleepCounterActiveDesolder(),
                                g_SleepCounters.counterDesolder,
                                HEATER_GetStatusDesolder().in_presleep,
-                               "О", g_sleepBufDesolder);
+                               g_sleepBufDesolder);
     }
 }
 
